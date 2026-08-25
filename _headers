@@ -1,0 +1,7 @@
+# Netlify custom headers.
+/*.glb
+  Content-Type: model/gltf-binary
+
+/*.mind
+  Content-Type: application/octet-stream
+  Cache-Control: public, max-age=31536000, immutable

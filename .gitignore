@@ -1,0 +1,9 @@
+node_modules/
+.netlify/
+.DS_Store
+
+# Raw AI exports and source photography — large, and every deployed artifact
+# is derived from them by scripts/prep-drink.mjs.
+source/
+._*
+.AppleDouble

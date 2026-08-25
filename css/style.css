@@ -1,0 +1,538 @@
+/* ==========================================================================
+   BRAND: this whole block is your palette / type system. Change these
+   variables and the entire site restyles — nothing else to touch for a
+   basic rebrand.
+   ========================================================================== */
+:root {
+  --color-bg: #14101c;
+  --color-bg-2: #241a33;
+  --color-accent: #ff6fae;      /* primary brand color — buttons, glow */
+  --color-accent-2: #ffd76f;    /* secondary accent — used in confetti */
+  --color-accent-3: #6fe3ff;    /* tertiary accent — used in confetti */
+  --color-text: #ffffff;
+  --color-text-dim: rgba(255, 255, 255, 0.7);
+  --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    Helvetica, Arial, sans-serif;
+  --radius-lg: 24px;
+  --radius-full: 999px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overscroll-behavior: none;
+}
+
+body {
+  font-family: var(--font-family);
+  background: radial-gradient(circle at 50% 20%, var(--color-bg-2), var(--color-bg) 70%);
+  color: var(--color-text);
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ============ SCREENS ============ */
+.screen {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  padding-top: max(24px, env(safe-area-inset-top));
+  padding-bottom: max(24px, env(safe-area-inset-bottom));
+  transition: opacity 0.35s ease;
+}
+
+.screen--hidden {
+  display: none;
+}
+
+.intro-content {
+  max-width: 420px;
+  width: 100%;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+/* ============ INTRO SCREEN ============ */
+.logo-badge {
+  font-size: 64px;
+  line-height: 1;
+  margin-bottom: 8px;
+  animation: float 3.2s ease-in-out infinite;
+  filter: drop-shadow(0 8px 24px rgba(255, 111, 174, 0.45));
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0) rotate(-3deg); }
+  50% { transform: translateY(-14px) rotate(3deg); }
+}
+
+.intro-title {
+  font-size: clamp(24px, 6vw, 32px);
+  font-weight: 800;
+  margin: 0;
+  line-height: 1.25;
+}
+
+.brand-name {
+  color: var(--color-accent);
+}
+
+.intro-subtitle {
+  font-size: 16px;
+  color: var(--color-text-dim);
+  margin: 0 0 8px;
+}
+
+.intro-hint {
+  font-size: 13px;
+  color: var(--color-text-dim);
+  margin-top: 16px;
+}
+
+/* ============ REVEAL BUTTON ============ */
+.reveal-btn {
+  appearance: none;
+  border: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 18px 32px;
+  font-size: 18px;
+  font-weight: 700;
+  color: #1a1024;
+  background: linear-gradient(135deg, var(--color-accent), var(--color-accent-2));
+  border-radius: var(--radius-full);
+  box-shadow: 0 12px 32px rgba(255, 111, 174, 0.35);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  animation: pulse 2.2s ease-in-out infinite;
+}
+
+.reveal-btn:active {
+  transform: scale(0.96);
+}
+
+@keyframes pulse {
+  0%, 100% { box-shadow: 0 12px 32px rgba(255, 111, 174, 0.35); }
+  50% { box-shadow: 0 12px 40px rgba(255, 111, 174, 0.6); }
+}
+
+.reveal-btn-icon {
+  font-size: 20px;
+}
+
+/* ============ AR SCREEN (image-tracking camera view) ============ */
+.ar-screen {
+  padding: 0;
+  flex-direction: column;
+  background: #000;
+}
+
+.ar-container {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* MindAR injects an absolutely-positioned <video> (camera feed) and
+   <canvas> (3D render) into .ar-container, and computes its own inline
+   width/height/offset styles to crop the video to a "cover" fit for the
+   container — don't override those with CSS here, it'll fight the math
+   and can push the video out of view. */
+
+.fallback-model {
+  width: 100%;
+  height: 320px;
+  --poster-color: transparent;
+  background: transparent;
+  border-radius: var(--radius-lg);
+  margin: 12px 0;
+}
+
+.ar-overlay-ui {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 20px;
+  padding-bottom: max(20px, env(safe-area-inset-bottom));
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.55), transparent);
+  pointer-events: none;
+}
+
+.ar-instructions {
+  color: var(--color-text);
+  font-size: 15px;
+  font-weight: 600;
+  text-align: center;
+  margin: 0;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+  transition: opacity 0.3s ease;
+  opacity: 1;
+}
+
+.ar-instructions--hidden {
+  opacity: 0;
+}
+
+.back-btn {
+  appearance: none;
+  border: none;
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--color-text);
+  padding: 10px 18px;
+  border-radius: var(--radius-full);
+  font-size: 14px;
+  cursor: pointer;
+  /* fixed (not absolute) so this stays pinned to the viewport corner
+     regardless of being nested inside the bottom .ar-overlay-ui bar */
+  position: fixed;
+  left: 16px;
+  top: max(16px, env(safe-area-inset-top));
+  z-index: 5; /* stay above MindAR's injected camera video/canvas */
+}
+
+/* ============ MENU BUTTON (on the intro screen) ============ */
+.menu-btn {
+  appearance: none;
+  cursor: pointer;
+  margin-top: 18px;
+  padding: 12px 24px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-text);
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: var(--radius-full);
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+
+.menu-btn:active {
+  transform: scale(0.96);
+  background: rgba(255, 255, 255, 0.16);
+}
+
+/* ============ COCKTAIL MENU (list) ============ */
+/* The menu can be longer than the viewport, so unlike the other screens
+   this one scrolls. align-items:flex-start stops the flex centering from
+   clipping the top of a long list on a short phone. */
+.menu-screen {
+  align-items: flex-start;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.menu-inner {
+  width: 100%;
+  max-width: 480px;
+  margin: 0 auto;
+  /* Clear the fixed back button in the top-left. */
+  padding-top: 56px;
+}
+
+.menu-header {
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.menu-title {
+  font-size: clamp(22px, 5.5vw, 28px);
+  font-weight: 800;
+  margin: 0 0 6px;
+}
+
+.menu-subtitle {
+  font-size: 14px;
+  color: var(--color-text-dim);
+  margin: 0;
+}
+
+.drink-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.drink-row-btn {
+  appearance: none;
+  cursor: pointer;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  /* Generous vertical padding on purpose: this gets tapped one-handed, in a
+     dark room, often while holding a drink. */
+  padding: 14px 16px;
+  text-align: left;
+  color: var(--color-text);
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-lg);
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+
+.drink-row-btn:active {
+  transform: scale(0.98);
+  background: rgba(255, 255, 255, 0.13);
+}
+
+.drink-row-emoji {
+  font-size: 30px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.drink-row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0; /* lets the tagline ellipsis instead of stretching the row */
+  flex: 1;
+}
+
+.drink-row-name {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.drink-row-tagline {
+  font-size: 13px;
+  color: var(--color-text-dim);
+  line-height: 1.35;
+}
+
+.drink-row-price {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--color-accent-2);
+  flex-shrink: 0;
+}
+
+/* ============ COCKTAIL DETAIL (3D + native AR) ============ */
+.drink-screen {
+  flex-direction: column;
+  /* Set per-drink from js/menu.js — a wash of the drink's own colour behind
+     the glass. Falls back to the brand accent before a drink is chosen. */
+  --drink-accent: var(--color-accent);
+}
+
+.drink-inner {
+  width: 100%;
+  max-width: 420px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.drink-stage {
+  position: relative;
+  width: 100%;
+  height: 340px;
+  margin-bottom: 8px;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: radial-gradient(
+    circle at 50% 55%,
+    color-mix(in srgb, var(--drink-accent) 45%, transparent),
+    transparent 70%
+  );
+  transition: background 0.4s ease;
+}
+
+.drink-model {
+  width: 100%;
+  height: 100%;
+  --poster-color: transparent;
+  background: transparent;
+}
+
+/* The viewer and the "coming soon" panel occupy the same box; which one is
+   visible is driven entirely by [data-model-state] on the screen, set in
+   js/menu.js. Keeping the switch in CSS means the JS never touches display. */
+.drink-missing {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.drink-screen[data-model-state="ready"] .drink-missing,
+.drink-screen[data-model-state="loading"] .drink-missing {
+  display: none;
+}
+
+.drink-screen[data-model-state="missing"] .drink-model {
+  visibility: hidden;
+}
+
+.drink-missing-emoji {
+  font-size: 72px;
+  line-height: 1;
+  animation: float 3.2s ease-in-out infinite;
+}
+
+.drink-missing-text {
+  font-size: 13px;
+  color: var(--color-text-dim);
+  margin: 0;
+}
+
+.drink-name {
+  font-size: clamp(20px, 5vw, 26px);
+  font-weight: 800;
+  margin: 0;
+}
+
+.drink-tagline {
+  font-size: 14px;
+  color: var(--color-text-dim);
+  margin: 0;
+  line-height: 1.4;
+}
+
+.drink-price {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--color-accent-2);
+  margin: 4px 0 14px;
+}
+
+/* ============ CAROUSEL: ARROWS, DOTS, SLIDE ============ */
+.drink-arrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 2;
+  appearance: none;
+  border: none;
+  cursor: pointer;
+  width: 44px;              /* full 44px tap target, one-handed in the dark */
+  height: 44px;
+  border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--color-text);
+  font-size: 26px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease;
+}
+
+.drink-arrow:active {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.drink-arrow--prev { left: 4px; }
+.drink-arrow--next { right: 4px; }
+
+.drink-dots {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  margin: 4px 0 10px;
+}
+
+/* Without a position indicator a swipe has no feedback — the drink changes
+   but nothing says "3 of 6", so people never learn swiping keeps going. */
+.drink-dot {
+  appearance: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, 0.28);
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+
+.drink-dot--active {
+  background: var(--color-accent);
+  transform: scale(1.45);
+}
+
+/* A short slide so a swipe visibly moves something. Direction mirrors the
+   gesture: swiping left (to the next drink) enters from the right. */
+@keyframes slide-from-right {
+  from { opacity: 0; transform: translateX(28px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes slide-from-left {
+  from { opacity: 0; transform: translateX(-28px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+.drink-inner--from-right { animation: slide-from-right 0.28s ease-out; }
+.drink-inner--from-left  { animation: slide-from-left  0.28s ease-out; }
+
+/* Respect a reduced-motion preference — the carousel still works, it just
+   doesn't slide. */
+@media (prefers-reduced-motion: reduce) {
+  .drink-inner--from-right,
+  .drink-inner--from-left { animation: none; }
+  .logo-badge, .reveal-btn, .drink-missing-emoji { animation: none; }
+}
+
+/* The carousel is driven by horizontal swipes, so let the browser keep
+   vertical scrolling/zoom but stop it claiming horizontal pans for
+   back-navigation gestures. */
+.drink-screen {
+  touch-action: pan-y;
+}
+
+/* ============ CONFETTI CANVAS ============ */
+.confetti-canvas {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 9999;
+}
+
+/* ============ UTIL ============ */
+/* The HTML `hidden` attribute is only `display:none` in the UA stylesheet,
+   so ANY class that sets display beats it. .reveal-btn does exactly that,
+   which left the "View on your table" button visible while hidden=true was
+   set on it. Make the attribute win wherever it's used. */
+[hidden] {
+  display: none !important;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

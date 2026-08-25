@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+<title>Your Gift Awaits — The Alibi Bar</title>
+<meta name="description" content="Scan, tap, and watch your gift appear locked to your table card in AR." />
+
+<!--
+  ============================================================
+   BRAND SWAP-IN POINTS — search "BRAND:" across this project
+  ============================================================
+  1. <title> above            — bar name
+  2. css/style.css  (top)     — colors, fonts
+  3. assets/images/logo.*     — your logo (referenced below)
+  4. Copy text in the <body>  — headline / subline / button text
+  5. assets/models/*.glb       — your real 3D gift model
+  6. scripts/generate-table.mjs — card design (also bar name/colors)
+     (see README.md "Swapping in your own model" section)
+-->
+
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎁</text></svg>" />
+<link rel="stylesheet" href="css/style.css" />
+
+<!-- model-viewer powers two things:
+       1. the non-AR fallback screen's spinning 3D gift preview
+       2. the cocktail menu — browsing drinks in 3D, and "View on your
+          table", which hands off to iOS Quick Look / Android Scene Viewer
+     The gift's card-locked AR does NOT use this — it uses MindAR + three.js,
+     because locking to a printed card isn't something native AR can do.
+     See README "AR approach" and the header of js/menu.js.
+
+     Vendored rather than loaded from a CDN, for the same reason three and
+     MindAR are: a bar's guest wifi (captive portals, patchy signal, blocked
+     hosts) must not be able to break the menu. -->
+<script type="module" src="js/vendor/model-viewer/model-viewer.min.js"></script>
+
+<!-- Import map: lets js/ar-experience.js (and the vendored MindAR/GLTFLoader
+     bundles) resolve the bare "three" specifier to our vendored, version-
+     pinned copy — no CDN dependency, no bundler needed. Must appear before
+     any <script type="module"> that imports "three". -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "./js/vendor/three/three.module.min.js",
+    "three/addons/": "./js/vendor/three/"
+  }
+}
+</script>
+</head>
+<body>
+
+  <!-- ============ INTRO / LOADING SCREEN ============ -->
+  <!-- This is what the customer sees the instant the QR code opens. iOS/Safari
+       will NOT let a page enter AR automatically — it must be a direct result
+       of a user tap. That's why we show a branded screen with a big button
+       instead of trying to auto-launch AR on page load. -->
+  <section id="intro" class="screen">
+    <div class="intro-content">
+      <!-- BRAND: swap this emoji/box for an <img src="assets/images/logo.png"> -->
+      <div class="logo-badge" aria-hidden="true">🎁</div>
+
+      <h1 class="intro-title">Welcome to <span class="brand-name">The Alibi Bar</span></h1>
+      <p class="intro-subtitle">A little something appeared on your table card.</p>
+
+      <button id="reveal-btn" class="reveal-btn">
+        <span class="reveal-btn-label">Tap to see your gift</span>
+        <span class="reveal-btn-icon">✨</span>
+      </button>
+
+      <p class="intro-hint">Then point your camera at the card on your table</p>
+
+
+      <!-- Secondary action. Deliberately quieter than the reveal button —
+           the gift is the reason they scanned; the menu is the thing they
+           find once they're here. -->
+      <button id="menu-btn" class="menu-btn">
+        <span aria-hidden="true">🍸</span> Browse the bar menu
+      </button>
+    </div>
+  </section>
+
+  <!-- ============ COCKTAIL MENU (list) ============ -->
+  <!-- Populated from js/drinks.js — no drink markup lives here. -->
+  <section id="menu-screen" class="screen screen--hidden menu-screen">
+    <div class="menu-inner">
+      <header class="menu-header">
+        <h2 class="menu-title">The Bar Menu</h2>
+        <p class="menu-subtitle">Tap a drink to see it in 3D — then stand it on your table.</p>
+      </header>
+      <ul id="drink-list" class="drink-list"></ul>
+    </div>
+    <button id="menu-back-btn" class="back-btn" aria-label="Back">← Back</button>
+  </section>
+
+  <!-- ============ COCKTAIL DETAIL (3D + native AR) ============ -->
+  <!-- Unlike the gift above, this uses <model-viewer>'s AR handoff to iOS
+       Quick Look / Android Scene Viewer. Those track with ARKit/ARCore SLAM
+       rather than a printed marker, so they hold steady in bar lighting —
+       see the header comment in js/menu.js. -->
+  <section id="drink-screen" class="screen screen--hidden drink-screen" data-model-state="loading">
+    <div class="drink-inner">
+      <div class="drink-stage">
+        <!-- No camera-controls on purpose: orbit would swallow horizontal
+             drags and break swipe-to-next. See the SWIPE note in js/menu.js.
+             auto-rotate gives the all-round view orbit would have. -->
+        <model-viewer
+          id="drink-viewer"
+          class="drink-model"
+          loading="eager"
+          auto-rotate
+          autoplay
+          shadow-intensity="1"
+          exposure="1.1"
+          environment-image="neutral"
+          ar
+          ar-modes="webxr scene-viewer quick-look"
+          ar-placement="floor"
+        ></model-viewer>
+
+        <!-- Tap targets for anyone who doesn't discover the swipe, and the
+             only way through on a desktop without a touchscreen. -->
+        <button id="drink-prev" class="drink-arrow drink-arrow--prev" aria-label="Previous drink">‹</button>
+        <button id="drink-next" class="drink-arrow drink-arrow--next" aria-label="Next drink">›</button>
+
+        <!-- Shown instead of the viewer when a drink has no .glb yet. -->
+        <div class="drink-missing">
+          <span id="drink-missing-emoji" class="drink-missing-emoji" aria-hidden="true">🍸</span>
+          <p class="drink-missing-text">3D preview coming soon</p>
+        </div>
+      </div>
+
+      <div id="drink-dots" class="drink-dots" role="tablist" aria-label="Drinks"></div>
+
+      <h2 id="drink-name" class="drink-name"></h2>
+      <p id="drink-tagline" class="drink-tagline"></p>
+      <p id="drink-price" class="drink-price"></p>
+
+      <button id="drink-ar-btn" class="reveal-btn" hidden>
+        <span class="reveal-btn-label">View on your table</span>
+        <span class="reveal-btn-icon">📱</span>
+      </button>
+    </div>
+    <button id="drink-back-btn" class="back-btn" aria-label="Back to menu">← Menu</button>
+  </section>
+
+  <!-- ============ AR / IMAGE-TRACKING CAMERA VIEW ============ -->
+  <!-- Hidden until the user taps the reveal button above. MindAR fills
+       #ar-container with a fullscreen <video> (camera feed) plus a <canvas>
+       it renders the 3D gift onto, once the printed card is recognized. -->
+  <section id="ar-screen" class="screen screen--hidden ar-screen">
+    <div id="ar-container" class="ar-container"></div>
+
+    <div id="ar-overlay-ui" class="ar-overlay-ui">
+      <p id="ar-instructions" class="ar-instructions">
+        Point your camera at the card on your table 🔍
+      </p>
+    </div>
+    <button id="back-btn" class="back-btn" aria-label="Back">← Back</button>
+  </section>
+
+  <!-- ============ FALLBACK (camera / WebGL not supported) ============ -->
+  <section id="fallback-screen" class="screen screen--hidden">
+    <div class="intro-content">
+      <div class="logo-badge" aria-hidden="true">📱</div>
+      <h1 class="intro-title">AR isn't available here</h1>
+      <p class="intro-subtitle" id="fallback-reason">
+        Your browser doesn't support AR yet — but here's your gift in 3D!
+      </p>
+
+      <model-viewer
+        id="fallback-model"
+        class="fallback-model"
+        src="assets/models/gift-placeholder.glb"
+        alt="An animated 3D gift"
+        camera-controls
+        auto-rotate
+        autoplay
+        exposure="1.1"
+        environment-image="neutral"
+      ></model-viewer>
+
+      <p class="intro-hint">
+        For the full AR experience, open this link in <strong>Safari</strong> (iPhone)
+        or <strong>Chrome</strong> (Android), and allow camera access when asked.
+      </p>
+    </div>
+  </section>
+
+  <!-- Confetti canvas overlay, sits above everything, ignores clicks -->
+  <canvas id="confetti-canvas" class="confetti-canvas"></canvas>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
