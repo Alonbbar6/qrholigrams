@@ -17,7 +17,11 @@ import { MindARThree } from "./vendor/mindar/mindar-image-three.prod.js";
 const params = new URLSearchParams(location.search);
 export const tableId = params.get("table") || "1";
 const TARGET_SRC = `assets/targets/table-${tableId}.mind`;
-const MODEL_SRC = "assets/models/gift-placeholder.glb";
+
+// The gift is the default, but the same card can host any model — the drinks
+// menu passes a cocktail here so it stands on the customer's table card.
+// See startImageTrackingAR({ modelSrc }).
+const DEFAULT_MODEL_SRC = "assets/models/gift-placeholder.glb";
 
 // BRAND: idle turntable spin for models that have no baked animation.
 // Off — the gift stands still on the card. Models WITH a baked animation
@@ -59,6 +63,18 @@ const FILTER_BETA = Number(params.get("beta")) || 1000;
 // card that tracks badly in a real venue.
 const DEBUG = params.get("debug") === "1";
 
+// Built lazily so the 300 KB decoder is only fetched when a Draco-compressed
+// model is actually shown on the card.
+let dracoLoaderPromise = null;
+function makeDracoLoader() {
+  dracoLoaderPromise ??= import("./vendor/three/loaders/DRACOLoader.js").then((m) => {
+    const dl = new m.DRACOLoader();
+    dl.setDecoderPath("js/vendor/draco/");
+    return dl;
+  });
+  return dracoLoaderPromise;
+}
+
 export function isImageTrackingSupported() {
   return Boolean(
     navigator.mediaDevices &&
@@ -68,9 +84,15 @@ export function isImageTrackingSupported() {
 }
 
 // container: DOM element MindAR will fill with <video> + render <canvas>.
+// modelSrc:  .glb to stand on the card — defaults to the gift.
 // onTargetFound / onTargetLost: called as the card enters/leaves view.
 // Returns the running MindARThree instance (call .stop() to release the camera).
-export async function startImageTrackingAR({ container, onTargetFound, onTargetLost }) {
+export async function startImageTrackingAR({
+  container,
+  modelSrc = DEFAULT_MODEL_SRC,
+  onTargetFound,
+  onTargetLost,
+}) {
   if (DEBUG) window.__arDebug = [];
 
   const mindarThree = new MindARThree({
@@ -95,7 +117,14 @@ export async function startImageTrackingAR({ container, onTargetFound, onTargetL
   const anchor = mindarThree.addAnchor(0);
 
   const loader = new GLTFLoader();
-  const gltf = await loader.loadAsync(MODEL_SRC);
+  // Drink models are Draco-compressed by scripts/prep-drink.mjs, so the
+  // loader needs a Draco decoder. Vendored, not the CDN default — a bar's
+  // guest wifi must not be able to break this. GLTFLoader only reaches for
+  // the decoder when a file actually uses the extension, so the uncompressed
+  // gift model costs nothing here.
+  loader.setDRACOLoader(await makeDracoLoader());
+
+  const gltf = await loader.loadAsync(modelSrc);
   const model = gltf.scene;
 
   // ---- Stand the model UP on the card ------------------------------------

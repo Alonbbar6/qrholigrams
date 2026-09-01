@@ -140,6 +140,14 @@
         <span class="reveal-btn-label">View on your table</span>
         <span class="reveal-btn-icon">📱</span>
       </button>
+
+      <!-- Puts THIS drink on the printed table card via MindAR image
+           tracking — the same mechanism as the gift. Distinct from the
+           button above, which hands off to native AR and anchors to a
+           floor plane instead of the card. -->
+      <button id="drink-card-btn" class="menu-btn" hidden>
+        <span aria-hidden="true">🃏</span> See it on your card
+      </button>
     </div>
     <button id="drink-back-btn" class="back-btn" aria-label="Back to menu">← Menu</button>
   </section>

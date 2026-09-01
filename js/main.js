@@ -6,6 +6,7 @@
 import confetti from "./vendor/confetti.js";
 import { isImageTrackingSupported, startImageTrackingAR, tableId } from "./ar-experience.js";
 import { initDrinksMenu } from "./menu.js";
+import { DRINKS } from "./drinks.js";
 
 // ---------------------------------------------------------------------------
 // ANALYTICS HOOK
@@ -83,55 +84,87 @@ function fireConfetti(opts = {}) {
 // ---------------------------------------------------------------------------
 // SCREEN FLOW
 // ---------------------------------------------------------------------------
-revealBtn.addEventListener("click", async () => {
-  trackEvent("gift_reveal_tapped", { table: tableId });
-  fireConfetti();
-
+// One card-AR launcher, shared by the gift and by any drink. `modelSrc`
+// undefined means the gift (ar-experience.js supplies its own default).
+// `label` is only used for analytics and the on-screen prompt.
+async function startCardAR({ modelSrc, label, hint } = {}) {
   if (!isImageTrackingSupported()) {
     goToFallback();
     return;
   }
 
+  // Leaving the menu's <model-viewer> holding a decoded model while MindAR
+  // spins up a second WebGL context is how phones run out of GPU memory
+  // mid-session. The menu drops its model when its screen is hidden.
+  drinksMenu?.close();
+
   showScreen(arScreen);
+  arInstructions.textContent = hint ?? "Point your camera at the card on your table 🔍";
   arInstructions.classList.remove("ar-instructions--hidden");
   arContainer.innerHTML = ""; // clear any previous session's video/canvas
 
   try {
     activeSession = await startImageTrackingAR({
       container: arContainer,
+      modelSrc,
       onTargetFound: () => {
-        trackEvent("ar_target_found", { table: tableId });
+        trackEvent("ar_target_found", { table: tableId, subject: label });
         arInstructions.classList.add("ar-instructions--hidden");
         fireConfetti({ origin: { y: 0.4 }, particleCount: 90, spread: 100 });
       },
       onTargetLost: () => {
-        trackEvent("ar_target_lost", { table: tableId });
+        trackEvent("ar_target_lost", { table: tableId, subject: label });
         arInstructions.classList.remove("ar-instructions--hidden");
       },
     });
-    trackEvent("ar_session_started", { table: tableId });
+    trackEvent("ar_session_started", { table: tableId, subject: label });
   } catch (err) {
     // Most commonly: camera permission denied, or no camera available.
-    trackEvent("ar_session_failed", { table: tableId, reason: err?.message });
+    trackEvent("ar_session_failed", { table: tableId, subject: label, reason: err?.message });
     stopActiveSession();
     goToFallback("We couldn't access your camera — enjoy the 3D preview instead!");
   }
+}
+
+revealBtn.addEventListener("click", () => {
+  trackEvent("gift_reveal_tapped", { table: tableId });
+  fireConfetti();
+  startCardAR({ label: "gift" });
 });
+
+// Where ← Back returns to from the card-AR screen: the gift came from the
+// intro, a drink came from the carousel.
+let arReturnsToCarousel = false;
 
 backBtn.addEventListener("click", () => {
   stopActiveSession();
-  showScreen(introScreen);
+  if (arReturnsToCarousel) openCarousel(lastCardDrinkIndex);
+  else showScreen(introScreen);
 });
+
+let lastCardDrinkIndex = 0;
 
 // ---------------------------------------------------------------------------
 // DRINKS MENU
 // ---------------------------------------------------------------------------
 drinksMenu = initDrinksMenu({
   onExitToIntro: () => showScreen(introScreen),
+  // "See it on your card" — stand THIS drink on the printed table card,
+  // using the same image tracking as the gift.
+  onShowDrinkOnCard: (drink, modelSrc) => {
+    arReturnsToCarousel = true;
+    lastCardDrinkIndex = DRINKS.findIndex((d) => d.id === drink.id);
+    startCardAR({
+      modelSrc,
+      label: drink.id,
+      hint: `Point your camera at the card to see the ${drink.name} 🍸`,
+    });
+  },
   trackEvent,
 });
 
 function openMenu() {
+  arReturnsToCarousel = false;
   // Release the camera first — browsing the menu with a live camera stream
   // running behind it drains battery and, on iOS, can leave the AR session
   // in a state where re-entering it fails.
@@ -140,10 +173,11 @@ function openMenu() {
   drinksMenu.openList();
 }
 
-function openCarousel() {
+function openCarousel(index = 0) {
+  arReturnsToCarousel = false;
   stopActiveSession();
   hideMainScreens();
-  drinksMenu.openCarousel(0);
+  drinksMenu.openCarousel(index);
 }
 
 document.getElementById("menu-btn").addEventListener("click", openMenu);

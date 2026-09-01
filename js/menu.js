@@ -50,6 +50,7 @@ let drinkScreen = null;
 let dotsEl = null;
 let currentIndex = 0;
 let onExit = null;
+let onShowOnCard = null;
 let track = () => {};
 
 const currentDrink = () => DRINKS[currentIndex];
@@ -130,6 +131,8 @@ function openDrinkAt(index, direction = 0) {
   // the new one downloads, which reads as the swipe not having registered.
   setModelState("loading");
   startLoadTimer();
+  document.getElementById("drink-ar-btn").hidden = true;
+  document.getElementById("drink-card-btn").hidden = true;
 
   const iosSrc = iosModelPathFor(drink);
   if (iosSrc) viewer.setAttribute("ios-src", iosSrc);
@@ -211,6 +214,9 @@ function onModelLoad() {
   // AR — desktop browsers and older phones can't. model-viewer resolves this
   // asynchronously, so read it after load rather than up front.
   document.getElementById("drink-ar-btn").hidden = !viewer.canActivateAR;
+  // The card button needs a camera and WebGL, not native AR — a wider set of
+  // devices. It also needs the model to exist, which `ready` just proved.
+  document.getElementById("drink-card-btn").hidden = !cardArAvailable();
 }
 
 function onModelError() {
@@ -219,6 +225,17 @@ function onModelError() {
   clearTimeout(loadTimer);
   setModelState("missing");
   document.getElementById("drink-ar-btn").hidden = true;
+  // No model means nothing to stand on the card either.
+  document.getElementById("drink-card-btn").hidden = true;
+}
+
+// Card AR needs a camera and WebGL. Mirrors isImageTrackingSupported() in
+// ar-experience.js rather than importing it, so the menu stays independent
+// of the gift's module.
+function cardArAvailable() {
+  return Boolean(
+    navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.WebGLRenderingContext
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -280,13 +297,20 @@ function showScreen(screen) {
 
 function hideAll() {
   [menuScreen, drinkScreen].forEach((s) => s.classList.add("screen--hidden"));
+  // Release the decoded model and its textures. This matters most right
+  // before card AR starts: MindAR opens its own WebGL context, and leaving
+  // a drink resident in this one is how a mid-range phone runs out of GPU
+  // memory partway through a session.
+  clearTimeout(loadTimer);
+  viewer?.removeAttribute("src");
 }
 
 // ---------------------------------------------------------------------------
 // SETUP
 // ---------------------------------------------------------------------------
-export function initDrinksMenu({ onExitToIntro, trackEvent = () => {} } = {}) {
+export function initDrinksMenu({ onExitToIntro, onShowDrinkOnCard, trackEvent = () => {} } = {}) {
   onExit = onExitToIntro;
+  onShowOnCard = onShowDrinkOnCard;
   track = trackEvent;
 
   menuScreen = document.getElementById("menu-screen");
@@ -323,6 +347,14 @@ export function initDrinksMenu({ onExitToIntro, trackEvent = () => {} } = {}) {
     // Must be called from a user gesture — Quick Look and Scene Viewer both
     // refuse to launch otherwise.
     viewer.activateAR();
+  });
+
+  document.getElementById("drink-card-btn").addEventListener("click", () => {
+    const drink = currentDrink();
+    track("drink_card_ar_opened", { drink: drink.id });
+    // Hand the model path up to main.js, which owns the MindAR session and
+    // the camera lifecycle.
+    onShowOnCard?.(drink, modelPathFor(drink));
   });
 
   document.getElementById("drink-back-btn").addEventListener("click", () => {
