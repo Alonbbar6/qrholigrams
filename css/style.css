@@ -506,6 +506,69 @@ body {
   touch-action: pan-y;
 }
 
+/* ============ AR DRINK OVERLAY (details over the camera feed) ============ */
+.ar-drink-info {
+  width: 100%;
+  max-width: 420px;
+  text-align: center;
+  /* The overlay bar itself is pointer-events:none so swipes reach the screen
+     beneath; the dots are the one thing that needs to be tappable. */
+  pointer-events: none;
+}
+
+.ar-dots {
+  pointer-events: auto;
+  margin-bottom: 10px;
+}
+
+/* Text over a live camera feed can land on anything — a bright bar, a white
+   tablecloth. A shadow plus a scrim keeps it readable regardless. */
+.ar-drink-name {
+  font-size: clamp(20px, 5.5vw, 26px);
+  font-weight: 800;
+  margin: 0 0 2px;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8);
+}
+
+.ar-drink-tagline {
+  font-size: 13px;
+  color: var(--color-text-dim);
+  margin: 0 0 6px;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.8);
+}
+
+.ar-drink-price {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--color-accent-2);
+  margin: 0;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.85);
+}
+
+.ar-swipe-hint {
+  font-size: 12px;
+  color: var(--color-text-dim);
+  margin: 10px 0 0;
+  letter-spacing: 0.04em;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.8);
+  animation: hint-fade 2.6s ease-in-out infinite;
+}
+
+@keyframes hint-fade {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+
+/* Horizontal swipes drive the carousel; keep vertical gestures to the
+   browser so pull-to-refresh and the like still behave. */
+.ar-screen {
+  touch-action: pan-y;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ar-swipe-hint { animation: none; opacity: 0.8; }
+}
+
 /* ============ CONFETTI CANVAS ============ */
 .confetti-canvas {
   position: fixed;

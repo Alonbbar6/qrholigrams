@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
-<title>Your Gift Awaits — The Alibi Bar</title>
-<meta name="description" content="Scan, tap, and watch your gift appear locked to your table card in AR." />
+<title>The Alibi Bar — Cocktails in AR</title>
+<meta name="description" content="Scan the card, and our cocktails appear on your table in AR. Swipe to see the whole menu." />
 
 <!--
   ============================================================
@@ -61,21 +61,22 @@
       <div class="logo-badge" aria-hidden="true">🎁</div>
 
       <h1 class="intro-title">Welcome to <span class="brand-name">The Alibi Bar</span></h1>
-      <p class="intro-subtitle">A little something appeared on your table card.</p>
+      <p class="intro-subtitle">See our cocktails standing on your table, in 3D.</p>
 
+      <!-- This tap is unavoidable: iOS/Safari will not open the camera except
+           as the direct result of a user gesture, so a scan can never auto-
+           launch AR. One button is the shortest legal path from QR to drink. -->
       <button id="reveal-btn" class="reveal-btn">
-        <span class="reveal-btn-label">Tap to see your gift</span>
-        <span class="reveal-btn-icon">✨</span>
+        <span class="reveal-btn-label">Tap to see the drinks</span>
+        <span class="reveal-btn-icon">🍸</span>
       </button>
 
-      <p class="intro-hint">Then point your camera at the card on your table</p>
+      <p class="intro-hint">Then point your camera at the card on your table, and swipe</p>
 
-
-      <!-- Secondary action. Deliberately quieter than the reveal button —
-           the gift is the reason they scanned; the menu is the thing they
-           find once they're here. -->
+      <!-- Quieter secondary route for anyone without a card to hand, or whose
+           camera is refused. -->
       <button id="menu-btn" class="menu-btn">
-        <span aria-hidden="true">🍸</span> Browse the bar menu
+        <span aria-hidden="true">📖</span> Browse the menu instead
       </button>
     </div>
   </section>
@@ -163,6 +164,17 @@
       <p id="ar-instructions" class="ar-instructions">
         Point your camera at the card on your table 🔍
       </p>
+
+      <!-- Drink details, shown over the camera feed once the card is found.
+           pointer-events are re-enabled on the controls only — the rest of
+           the bar must stay transparent to the swipe handler beneath it. -->
+      <div id="ar-drink-info" class="ar-drink-info" hidden>
+        <div id="ar-dots" class="drink-dots ar-dots"></div>
+        <h2 id="ar-drink-name" class="ar-drink-name"></h2>
+        <p id="ar-drink-tagline" class="ar-drink-tagline"></p>
+        <p id="ar-drink-price" class="ar-drink-price"></p>
+        <p class="ar-swipe-hint">‹ swipe to change drink ›</p>
+      </div>
     </div>
     <button id="back-btn" class="back-btn" aria-label="Back">← Back</button>
   </section>

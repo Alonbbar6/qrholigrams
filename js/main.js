@@ -110,11 +110,15 @@ async function startCardAR({ modelSrc, label, hint } = {}) {
       onTargetFound: () => {
         trackEvent("ar_target_found", { table: tableId, subject: label });
         arInstructions.classList.add("ar-instructions--hidden");
+        // Details only make sense once the drink is actually on the card —
+        // showing a price over an empty room reads as a broken overlay.
+        if (arCarouselActive) arInfo.hidden = false;
         fireConfetti({ origin: { y: 0.4 }, particleCount: 90, spread: 100 });
       },
       onTargetLost: () => {
         trackEvent("ar_target_lost", { table: tableId, subject: label });
         arInstructions.classList.remove("ar-instructions--hidden");
+        arInfo.hidden = true;
       },
     });
     trackEvent("ar_session_started", { table: tableId, subject: label });
@@ -126,15 +130,29 @@ async function startCardAR({ modelSrc, label, hint } = {}) {
   }
 }
 
-revealBtn.addEventListener("click", () => {
-  trackEvent("gift_reveal_tapped", { table: tableId });
+// The intro's primary button now opens the DRINK carousel on the card —
+// that is what a customer scanning a table card is here for. The gift is
+// still reachable at ?gift=1 and from the menu screen.
+revealBtn.addEventListener("click", async () => {
+  trackEvent("ar_carousel_tapped", { table: tableId });
   fireConfetti();
-  startCardAR({ label: "gift" });
+  arCarouselActive = true;
+  arReturnsToCarousel = false;
+  buildArDots();
+  await startCardAR({
+    modelSrc: `assets/models/drinks/${DRINKS[arIndex].id}.glb`,
+    label: DRINKS[arIndex].id,
+    hint: "Point your camera at the card on your table 🔍",
+  });
+  // Only meaningful once a session exists; showArDrink swaps the model and
+  // fills in the details panel.
+  if (activeSession) showArDrink(arIndex);
 });
 
 // Where ← Back returns to from the card-AR screen: the gift came from the
 // intro, a drink came from the carousel.
 let arReturnsToCarousel = false;
+let lastCardDrinkIndex = 0;
 
 backBtn.addEventListener("click", () => {
   stopActiveSession();
@@ -142,7 +160,75 @@ backBtn.addEventListener("click", () => {
   else showScreen(introScreen);
 });
 
-let lastCardDrinkIndex = 0;
+// ---------------------------------------------------------------------------
+// AR DRINK CAROUSEL — swipe between drinks WITHOUT leaving the camera
+// ---------------------------------------------------------------------------
+// This is the headline flow: scan the card, the drink stands on it, its price
+// sits below, and a swipe brings the next one. The MindAR session stays alive
+// across a swipe — only the model is swapped (ar-experience.js `setModel`).
+// Restarting the session instead would drop the camera stream, re-run target
+// acquisition, and on iOS can re-prompt for permission.
+const arInfo = document.getElementById("ar-drink-info");
+const arDots = document.getElementById("ar-dots");
+let arCarouselActive = false;
+let arIndex = 0;
+
+function buildArDots() {
+  arDots.innerHTML = "";
+  DRINKS.forEach((drink, i) => {
+    const dot = document.createElement("button");
+    dot.className = "drink-dot";
+    dot.type = "button";
+    dot.setAttribute("aria-label", `Show ${drink.name}`);
+    dot.addEventListener("click", () => showArDrink(i));
+    arDots.appendChild(dot);
+  });
+}
+
+function syncArDots() {
+  [...arDots.children].forEach((d, i) =>
+    d.classList.toggle("drink-dot--active", i === arIndex)
+  );
+}
+
+async function showArDrink(index) {
+  arIndex = (index + DRINKS.length) % DRINKS.length;
+  const drink = DRINKS[arIndex];
+
+  document.getElementById("ar-drink-name").textContent = drink.name;
+  document.getElementById("ar-drink-tagline").textContent = drink.tagline;
+  document.getElementById("ar-drink-price").textContent = drink.price;
+  syncArDots();
+  trackEvent("ar_drink_shown", { table: tableId, drink: drink.id });
+
+  try {
+    await activeSession?.setModel(`assets/models/drinks/${drink.id}.glb`);
+  } catch (err) {
+    // A drink with no .glb yet: keep the previous model on the card rather
+    // than leaving the customer staring at an empty card.
+    trackEvent("ar_drink_model_failed", { drink: drink.id, reason: err?.message });
+  }
+}
+
+// Swipe anywhere on the camera view. The overlay bar above it is
+// pointer-events:none precisely so these gestures reach here.
+const AR_SWIPE_MIN_PX = 45;
+const AR_SWIPE_MAX_OFF_AXIS = 0.6;
+(function attachArSwipe() {
+  let startX = 0, startY = 0, tracking = false;
+  arScreen.addEventListener("pointerdown", (e) => {
+    tracking = true; startX = e.clientX; startY = e.clientY;
+  }, { passive: true });
+  arScreen.addEventListener("pointerup", (e) => {
+    if (!tracking || !arCarouselActive) { tracking = false; return; }
+    tracking = false;
+    const dx = e.clientX - startX, dy = e.clientY - startY;
+    if (Math.abs(dx) < AR_SWIPE_MIN_PX) return;
+    if (Math.abs(dy) / Math.abs(dx) > AR_SWIPE_MAX_OFF_AXIS) return;
+    showArDrink(arIndex + (dx < 0 ? 1 : -1));
+  }, { passive: true });
+  arScreen.addEventListener("pointercancel", () => (tracking = false), { passive: true });
+})();
 
 // ---------------------------------------------------------------------------
 // DRINKS MENU
@@ -189,22 +275,47 @@ document.getElementById("menu-btn").addEventListener("click", openMenu);
 // thing customers came for, and it works in any lighting. The gift reveal is
 // still one tap away from the carousel's Menu screen.
 //
-//   (no param)  -> carousel        the QR-scan default
+//   (no param)  -> intro, whose button opens the AR drink carousel
+//   ?browse=1   -> the swipeable 3D carousel, no camera
 //   ?menu=1     -> the drinks list
-//   ?gift=1     -> straight to the gift intro, skipping the menu
+//   ?gift=1     -> the gift on the card, skipping the drinks
 //
 // Table cards encode /?table=N, which carries no menu/gift flag, so an
 // already-printed card lands on the carousel without being reprinted.
 const landing = new URLSearchParams(location.search);
-if (landing.get("gift") === "1") {
-  showScreen(introScreen);
-} else if (landing.get("menu") === "1") {
+if (landing.get("menu") === "1") {
   openMenu();
-} else {
+} else if (landing.get("browse") === "1") {
   openCarousel();
+} else {
+  // Both the default scan and ?gift=1 land here: iOS needs a tap before the
+  // camera can open, so the intro is the only legal first screen for
+  // anything camera-based. Which experience the button starts is decided by
+  // the gift flag.
+  showScreen(introScreen);
+}
+
+// ?gift=1 repoints the intro's primary button at the original gift reveal.
+if (landing.get("gift") === "1") {
+  const label = revealBtn.querySelector(".reveal-btn-label");
+  if (label) label.textContent = "Tap to see your gift";
+  revealBtn.querySelector(".reveal-btn-icon").textContent = "✨";
+  revealBtn.addEventListener(
+    "click",
+    (e) => {
+      // Run before the drinks handler and cancel it.
+      e.stopImmediatePropagation();
+      fireConfetti();
+      arCarouselActive = false;
+      startCardAR({ label: "gift" });
+    },
+    true
+  );
 }
 
 function stopActiveSession() {
+  arCarouselActive = false;
+  arInfo.hidden = true;
   if (activeSession) {
     try {
       activeSession.stop();
