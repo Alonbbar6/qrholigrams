@@ -161,6 +161,9 @@ export async function startImageTrackingAR({
     if (token !== swapToken) return; // superseded by a later swipe
 
     if (currentModel) {
+      // Stop any running clip before the model leaves the graph, so a
+      // half-finished action can't keep mutating a disposed object.
+      mixer?.stopAllAction();
       standGroup.remove(currentModel);
       // Free GPU memory explicitly — a browsing session through six drinks
       // otherwise accumulates every geometry and texture it has ever shown.
@@ -180,10 +183,21 @@ export async function startImageTrackingAR({
     mixer = null;
 
     const model = gltf.scene;
-    standGroup.add(model);
     model.rotation.x = Math.PI / 2;
 
     // ---- Auto-fit: size + seat it on the card ----------------------------
+    // MEASURE BEFORE PARENTING. Box3.setFromObject returns WORLD-space bounds,
+    // so measuring after standGroup.add() folds in every ancestor transform —
+    // standGroup's 180° spin and, far worse, anchor.group's live tracking
+    // matrix. At first load that is harmless because MindAR has not started
+    // and the anchor is still identity; on a swipe mid-session it is not.
+    // `fitted.min.z` becomes a camera-relative depth, and subtracting it
+    // throws the drink off the card by whatever the pose happened to be at
+    // the instant the swipe landed — a different wrong answer every time.
+    //
+    // While the model is detached its world matrix IS its local matrix, so
+    // these numbers are stable, repeatable, and in the space the offsets
+    // below are actually applied in.
     model.updateMatrixWorld(true);
     const size = new THREE.Box3().setFromObject(model).getSize(new THREE.Vector3());
     // After the X rotation the model's height runs along Z. Guard against a
@@ -198,6 +212,9 @@ export async function startImageTrackingAR({
     model.position.x -= c.x;
     model.position.y -= c.y;
     model.position.z -= fitted.min.z;
+
+    // Only now does it join the tracked graph.
+    standGroup.add(model);
 
     if (gltf.animations?.length) {
       mixer = new THREE.AnimationMixer(model);
