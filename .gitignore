@@ -7,3 +7,10 @@ node_modules/
 source/
 ._*
 .AppleDouble
+
+# Raw AI exports, wherever they land. They arrive in the project root and are
+# only moved to source/ by hand — one missed move pushed a 111 MB file at
+# GitHub (100 MB limit) and shipped it to the CDN. Ignore them by name so a
+# stray `git add -A` cannot repeat that.
+Meshy_AI_*.glb
+Tripo_*.glb

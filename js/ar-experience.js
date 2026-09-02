@@ -58,6 +58,24 @@ const AUTO_SPIN = false;
 const FILTER_MIN_CF = Number(params.get("mincf")) || 0.001;
 const FILTER_BETA = Number(params.get("beta")) || 1000;
 
+// ---------------------------------------------------------------------------
+// TRACKING TOLERANCES — how many consecutive frames before showing / hiding
+// ---------------------------------------------------------------------------
+// MindAR's defaults are warmupTolerance 5 and missTolerance 5. The miss value
+// is the problem in a bar: five missed frames is roughly 165 ms at 30 fps, so
+// the moment detection stutters — a hand crossing the card, a dim table, a
+// glare highlight — the drink vanishes and snaps back. That pop-in/pop-out
+// reads as "glitchy" far more than smooth wobble does.
+//
+// Raising it makes the drink ride through brief dropouts. The cost is that a
+// card genuinely leaving frame takes longer to clear, which matters much less
+// than flicker while someone is looking at their table.
+//
+// Warmup stays low so the drink still appears promptly on first sight.
+// Both overridable on real hardware:  ?warmup=5&miss=20
+const WARMUP_TOLERANCE = Number(params.get("warmup")) || 5;
+const MISS_TOLERANCE = Number(params.get("miss")) || 18;
+
 // Set ?debug=1 on the URL to record per-frame tracked positions into
 // window.__arDebug — used by the jitter test, and handy for diagnosing a
 // card that tracks badly in a real venue.
@@ -73,6 +91,12 @@ function makeDracoLoader() {
     return dl;
   });
   return dracoLoaderPromise;
+}
+
+// assets/models/drinks/negroni.glb -> assets/models/drinks/ar/negroni.glb
+function arVariantOf(src) {
+  const i = src.lastIndexOf("/");
+  return i === -1 ? src : `${src.slice(0, i)}/ar${src.slice(i)}`;
 }
 
 export function isImageTrackingSupported() {
@@ -103,6 +127,8 @@ export async function startImageTrackingAR({
     uiError: "no", // we handle failures ourselves and fall back to the 3D preview screen
     filterMinCF: FILTER_MIN_CF,
     filterBeta: FILTER_BETA,
+    warmupTolerance: WARMUP_TOLERANCE,
+    missTolerance: MISS_TOLERANCE,
   });
 
   const { renderer, scene, camera } = mindarThree;
@@ -157,7 +183,18 @@ export async function startImageTrackingAR({
     // Guard against a customer swiping faster than the models load: only the
     // most recent request may install itself.
     const token = ++swapToken;
-    const gltf = await loader.loadAsync(src);
+
+    // Prefer the lighter card-AR build. MindAR is decoding a camera feed and
+    // re-solving the card's pose every frame, so renderer time is taken
+    // directly out of tracking; the full model costs ~3x the triangles and
+    // ~4x the texture memory for detail invisible at a few centimetres.
+    // Falls back to the full model if no AR variant has been generated.
+    let gltf;
+    try {
+      gltf = await loader.loadAsync(arVariantOf(src));
+    } catch {
+      gltf = await loader.loadAsync(src);
+    }
     if (token !== swapToken) return; // superseded by a later swipe
 
     if (currentModel) {

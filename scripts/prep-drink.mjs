@@ -81,6 +81,25 @@ const DEFAULT_ERROR = 0.01; // allow real simplification (optimize default: 0.00
 const DEFAULT_TEXTURE_SIZE = 1024;
 
 // ---------------------------------------------------------------------------
+// AR VARIANT — a second, much lighter build for card tracking
+// ---------------------------------------------------------------------------
+// The 3D browser and native AR get a phone to themselves. Card AR does not:
+// MindAR is simultaneously decoding a camera feed and re-solving the card's
+// pose every single frame. Every millisecond the renderer spends on the drink
+// is a millisecond tracking does not get, and a lower frame rate means the
+// pose updates less often — which reads as stutter, not as a slow render.
+//
+// Measured on the Negroni:
+//   full   153,270 tris   3.1 MP textures   1070 KB
+//   ar      45,980 tris   0.8 MP textures    391 KB
+//
+// A drink on a table card occupies a couple of centimetres of screen. The
+// detail simply is not visible there, so this costs nothing a customer sees.
+const AR_VARIANT_DIR = "ar";
+const AR_RATIO = 0.015;
+const AR_TEXTURE_SIZE = 512;
+
+// ---------------------------------------------------------------------------
 // ARGS
 // ---------------------------------------------------------------------------
 const argv = process.argv.slice(2);
@@ -93,9 +112,12 @@ for (let i = 0; i < argv.length; i++) {
 
 const [inputPath, drinkId] = positional;
 const targetHeight = Number(flags.height ?? GLASS_HEIGHTS[flags.glass] ?? DEFAULT_HEIGHT);
-const ratio = Number(flags.ratio ?? DEFAULT_RATIO);
+const isArVariant = flags.variant === "ar";
+const ratio = Number(flags.ratio ?? (isArVariant ? AR_RATIO : DEFAULT_RATIO));
 const error = Number(flags.error ?? DEFAULT_ERROR);
-const textureSize = Number(flags["texture-size"] ?? DEFAULT_TEXTURE_SIZE);
+const textureSize = Number(
+  flags["texture-size"] ?? (isArVariant ? AR_TEXTURE_SIZE : DEFAULT_TEXTURE_SIZE)
+);
 
 if (!inputPath || !drinkId) {
   console.error(`
@@ -105,6 +127,8 @@ Usage: node scripts/prep-drink.mjs <input.glb> <drink-id> [options]
 
   --glass <name>       rocks|coupe|highball|flute|wine  (sets height)
   --height <metres>    explicit real-world height, overrides --glass
+  --variant ar         build the lighter card-AR copy into drinks/ar/
+                       (ratio ${AR_RATIO}, textures ${AR_TEXTURE_SIZE}px)
   --ratio <0-1>        fraction of vertices to keep       (default ${DEFAULT_RATIO})
   --error <number>     simplification error tolerance     (default ${DEFAULT_ERROR})
   --texture-size <px>  max texture dimension              (default ${DEFAULT_TEXTURE_SIZE})
@@ -122,7 +146,10 @@ if (!Number.isFinite(targetHeight) || targetHeight <= 0) {
   process.exit(1);
 }
 
-const outDir = path.join(process.cwd(), "assets", "models", "drinks");
+const outDir = path.join(
+  process.cwd(), "assets", "models", "drinks",
+  ...(isArVariant ? [AR_VARIANT_DIR] : [])
+);
 const outPath = path.join(outDir, `${drinkId}.glb`);
 const tmpA = path.join(outDir, `.tmp-${drinkId}-centered.glb`);
 const tmpB = path.join(outDir, `.tmp-${drinkId}-opt.glb`);
