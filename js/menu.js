@@ -311,6 +311,14 @@ function syncArMode() {
     btn[k].setAttribute("aria-disabled", String(!avail[k]));
   }
 
+  // WebXR unavailability is PERMANENT on iOS — Safari implements none of it,
+  // with no announced timeline — so on an iPhone this segment would advertise
+  // something the customer can never use. Hide it outright rather than dim it.
+  // The other two are only ever transiently unavailable (a camera permission
+  // not yet granted, a desktop browser), so those stay visible and explain
+  // themselves. Keeping a dead option on screen in a bar is just clutter.
+  btn.xr.hidden = !avail.xr;
+
   // Never leave the selection pointing at a mode that cannot run. Prefer the
   // best available rather than an arbitrary one.
   if (!avail[arMode]) arMode = ["xr", "steady", "auto"].find((k) => avail[k]) ?? arMode;
