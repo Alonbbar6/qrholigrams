@@ -569,6 +569,52 @@ body {
   .ar-swipe-hint { animation: none; opacity: 0.8; }
 }
 
+/* ============ AR MODE TOGGLE ============ */
+.ar-mode-toggle {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  margin-bottom: 12px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-full);
+}
+
+.ar-mode-opt {
+  appearance: none;
+  border: none;
+  cursor: pointer;
+  padding: 9px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-dim);
+  background: transparent;
+  border-radius: var(--radius-full);
+  transition: background 0.18s ease, color 0.18s ease;
+}
+
+.ar-mode-opt[aria-pressed="true"] {
+  color: #1a1024;
+  background: linear-gradient(135deg, var(--color-accent), var(--color-accent-2));
+}
+
+/* A mode the device cannot do stays visible but inert, so the choice still
+   explains itself rather than silently offering only one option. */
+.ar-mode-opt:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* One line of guidance under the native-AR button. Placement is a step the
+   OS owns, so the only way to steer it is to say so before the handoff. */
+.drink-ar-hint {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--color-text-dim);
+  margin: 10px 0 2px;
+  max-width: 300px;
+}
+
 /* ============ CONFETTI CANVAS ============ */
 .confetti-canvas {
   position: fixed;

@@ -84,6 +84,31 @@ pixels every frame. Per the table in section 1, that's *"Very robust"* in low
 light where image tracking is *"More sensitive"* — which matters a lot in a
 bar. The menu does not wobble in a dim room; the gift still can.
 
+### Choosing how AR anchors
+
+Each drink offers a toggle between two genuinely different engines, because
+neither is strictly better:
+
+| | Steady | Auto on card |
+|---|---|---|
+| Engine | iOS Quick Look / Android Scene Viewer | MindAR image tracking |
+| Anchors to | wherever the customer taps | the printed card, automatically |
+| Stability | **does not move, in any light** | re-solved every frame; wobbles in dim rooms |
+| Cost | one tap to position it | none |
+
+Steady is the default: ARKit/ARCore fuse the camera with the phone's motion
+sensors and keep a map of the room, so once the drink is placed it stays put.
+MindAR has neither — it re-guesses the card's pose from pixels every frame,
+which is why it drifts in a dark bar.
+
+There is no third option that does both. Native AR gives no API to constrain
+placement and ignores USDZ image anchors on iOS; WebXR image tracking would
+manage it but does not exist on iOS Safari at all.
+
+The choice is remembered per device in `localStorage`. A mode the device
+cannot do disables itself rather than disappearing, so the trade stays
+visible.
+
 ### Editing the menu
 
 Everything lives in [`js/drinks.js`](js/drinks.js) — name, tagline, price,

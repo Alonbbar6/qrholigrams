@@ -137,18 +137,31 @@
       <p id="drink-tagline" class="drink-tagline"></p>
       <p id="drink-price" class="drink-price"></p>
 
+      <!-- Two genuinely different AR engines, chosen explicitly rather than
+           ranked, because neither is strictly better:
+
+             Steady   iOS Quick Look / Android Scene Viewer. ARKit/ARCore
+                      world tracking — once placed it does not move, in any
+                      lighting. Costs one tap to position it.
+             Auto     MindAR image tracking. Finds the printed card by
+                      itself, no tapping, but re-solves the pose from camera
+                      pixels every frame, so it wobbles in a dim room.
+
+           A segment disables itself when the device cannot do that mode. -->
+      <div id="ar-mode-toggle" class="ar-mode-toggle" role="group" aria-label="AR mode" hidden>
+        <button id="ar-mode-steady" class="ar-mode-opt" type="button" aria-pressed="true">
+          <span aria-hidden="true">📱</span> Steady
+        </button>
+        <button id="ar-mode-auto" class="ar-mode-opt" type="button" aria-pressed="false">
+          <span aria-hidden="true">🃏</span> Auto on card
+        </button>
+      </div>
+
       <button id="drink-ar-btn" class="reveal-btn" hidden>
-        <span class="reveal-btn-label">View on your table</span>
+        <span class="reveal-btn-label">Place it on your table</span>
         <span class="reveal-btn-icon">📱</span>
       </button>
-
-      <!-- Puts THIS drink on the printed table card via MindAR image
-           tracking — the same mechanism as the gift. Distinct from the
-           button above, which hands off to native AR and anchors to a
-           floor plane instead of the card. -->
-      <button id="drink-card-btn" class="menu-btn" hidden>
-        <span aria-hidden="true">🃏</span> See it on your card
-      </button>
+      <p id="drink-ar-hint" class="drink-ar-hint" hidden></p>
     </div>
     <button id="drink-back-btn" class="back-btn" aria-label="Back to menu">← Menu</button>
   </section>

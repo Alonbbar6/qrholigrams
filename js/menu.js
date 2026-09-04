@@ -56,6 +56,36 @@ let track = () => {};
 const currentDrink = () => DRINKS[currentIndex];
 
 // ---------------------------------------------------------------------------
+// AR MODE — "steady" (native) vs "auto" (card tracking)
+// ---------------------------------------------------------------------------
+// Neither mode is strictly better, so the customer picks:
+//   steady  native AR. ARKit/ARCore world tracking; once placed it does not
+//           move, in any light. Costs one tap to position.
+//   auto    MindAR. Finds the printed card unaided, but re-solves the pose
+//           from camera pixels every frame, so it wobbles in a dim room.
+//
+// Steady is the default because "it doesn't move" is the thing people notice.
+const MODE_KEY = "alibi.arMode";
+let arMode = "steady";
+
+function loadMode() {
+  try {
+    const v = localStorage.getItem(MODE_KEY);
+    if (v === "steady" || v === "auto") arMode = v;
+  } catch {
+    // Private mode, blocked storage, embedded webview — the default stands.
+  }
+}
+
+function saveMode() {
+  try {
+    localStorage.setItem(MODE_KEY, arMode);
+  } catch {
+    // Preference just won't persist; the toggle still works this session.
+  }
+}
+
+// ---------------------------------------------------------------------------
 // LIST SCREEN
 // ---------------------------------------------------------------------------
 function buildList() {
@@ -131,8 +161,9 @@ function openDrinkAt(index, direction = 0) {
   // the new one downloads, which reads as the swipe not having registered.
   setModelState("loading");
   startLoadTimer();
+  document.getElementById("ar-mode-toggle").hidden = true;
   document.getElementById("drink-ar-btn").hidden = true;
-  document.getElementById("drink-card-btn").hidden = true;
+  document.getElementById("drink-ar-hint").hidden = true;
 
   const iosSrc = iosModelPathFor(drink);
   if (iosSrc) viewer.setAttribute("ios-src", iosSrc);
@@ -207,16 +238,51 @@ function startLoadTimer() {
   }, STALL_TIMEOUT_MS);
 }
 
+// Reflect the chosen mode in the toggle, the button label and the hint, and
+// disable whichever modes this device cannot actually do.
+function syncArMode() {
+  const steadyOK = Boolean(viewer?.canActivateAR);
+  const autoOK = cardArAvailable();
+
+  const steadyBtn = document.getElementById("ar-mode-steady");
+  const autoBtn = document.getElementById("ar-mode-auto");
+  steadyBtn.disabled = !steadyOK;
+  autoBtn.disabled = !autoOK;
+
+  // Never leave the selection pointing at a mode that cannot run.
+  if (arMode === "steady" && !steadyOK && autoOK) arMode = "auto";
+  if (arMode === "auto" && !autoOK && steadyOK) arMode = "steady";
+
+  steadyBtn.setAttribute("aria-pressed", String(arMode === "steady"));
+  autoBtn.setAttribute("aria-pressed", String(arMode === "auto"));
+
+  const label = document.getElementById("drink-ar-btn").querySelector(".reveal-btn-label");
+  const icon = document.getElementById("drink-ar-btn").querySelector(".reveal-btn-icon");
+  const hint = document.getElementById("drink-ar-hint");
+  if (arMode === "steady") {
+    label.textContent = "Place it on your table";
+    icon.textContent = "📱";
+    hint.textContent = "Point at your table and tap your card — it stays exactly where you put it";
+  } else {
+    label.textContent = "Show it on my card";
+    icon.textContent = "🃏";
+    hint.textContent = "Point at the card and it appears by itself — steadier in good light";
+  }
+
+  const any = steadyOK || autoOK;
+  document.getElementById("ar-mode-toggle").hidden = !any;
+  document.getElementById("drink-ar-btn").hidden = !any;
+  hint.hidden = !any;
+}
+
 function onModelLoad() {
   clearTimeout(loadTimer);
   setModelState("ready");
   // The AR button only means something where the device can actually enter
   // AR — desktop browsers and older phones can't. model-viewer resolves this
   // asynchronously, so read it after load rather than up front.
-  document.getElementById("drink-ar-btn").hidden = !viewer.canActivateAR;
-  // The card button needs a camera and WebGL, not native AR — a wider set of
-  // devices. It also needs the model to exist, which `ready` just proved.
-  document.getElementById("drink-card-btn").hidden = !cardArAvailable();
+  // Both modes need the model to exist, which `ready` just proved.
+  syncArMode();
 }
 
 function onModelError() {
@@ -224,9 +290,10 @@ function onModelError() {
   // written so the menu can be filled in before the art exists.
   clearTimeout(loadTimer);
   setModelState("missing");
+  // No model means neither mode has anything to show.
+  document.getElementById("ar-mode-toggle").hidden = true;
   document.getElementById("drink-ar-btn").hidden = true;
-  // No model means nothing to stand on the card either.
-  document.getElementById("drink-card-btn").hidden = true;
+  document.getElementById("drink-ar-hint").hidden = true;
 }
 
 // Card AR needs a camera and WebGL. Mirrors isImageTrackingSupported() in
@@ -319,6 +386,7 @@ export function initDrinksMenu({ onExitToIntro, onShowDrinkOnCard, trackEvent = 
   dotsEl = document.getElementById("drink-dots");
   viewer = document.getElementById("drink-viewer");
 
+  loadMode();
   buildList();
   buildDots();
 
@@ -343,19 +411,26 @@ export function initDrinksMenu({ onExitToIntro, onShowDrinkOnCard, trackEvent = 
   });
 
   document.getElementById("drink-ar-btn").addEventListener("click", () => {
-    track("drink_ar_opened", { drink: currentDrink()?.id });
-    // Must be called from a user gesture — Quick Look and Scene Viewer both
-    // refuse to launch otherwise.
-    viewer.activateAR();
+    const drink = currentDrink();
+    track("drink_ar_opened", { drink: drink?.id, mode: arMode });
+    if (arMode === "auto") {
+      // main.js owns the MindAR session and the camera lifecycle.
+      onShowOnCard?.(drink, modelPathFor(drink));
+    } else {
+      // Must be called from a user gesture — Quick Look and Scene Viewer both
+      // refuse to launch otherwise.
+      viewer.activateAR();
+    }
   });
 
-  document.getElementById("drink-card-btn").addEventListener("click", () => {
-    const drink = currentDrink();
-    track("drink_card_ar_opened", { drink: drink.id });
-    // Hand the model path up to main.js, which owns the MindAR session and
-    // the camera lifecycle.
-    onShowOnCard?.(drink, modelPathFor(drink));
-  });
+  for (const [id, mode] of [["ar-mode-steady", "steady"], ["ar-mode-auto", "auto"]]) {
+    document.getElementById(id).addEventListener("click", () => {
+      arMode = mode;
+      saveMode();
+      syncArMode();
+      track("ar_mode_changed", { mode });
+    });
+  }
 
   document.getElementById("drink-back-btn").addEventListener("click", () => {
     clearTimeout(loadTimer);
