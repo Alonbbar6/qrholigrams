@@ -76,6 +76,9 @@ const FILTER_BETA = Number(params.get("beta")) || 1000;
 const WARMUP_TOLERANCE = Number(params.get("warmup")) || 5;
 const MISS_TOLERANCE = Number(params.get("miss")) || 18;
 
+// ?torch=1 — see tuneCameraTrack below.
+const TORCH = params.get("torch") === "1";
+
 // Set ?debug=1 on the URL to record per-frame tracked positions into
 // window.__arDebug — used by the jitter test, and handy for diagnosing a
 // card that tracks badly in a real venue.
@@ -97,6 +100,70 @@ function makeDracoLoader() {
 function arVariantOf(src) {
   const i = src.lastIndexOf("/");
   return i === -1 ? src : `${src.slice(0, i)}/ar${src.slice(i)}`;
+}
+
+// ---------------------------------------------------------------------------
+// CAMERA TUNING — the constraints MindAR does not ask for
+// ---------------------------------------------------------------------------
+// MindAR requests only deviceId, facingMode, width and height. Everything else
+// is left on automatic, and two of those automatics actively fight tracking:
+//
+//   Autofocus hunting — the lens searches, frames go soft, feature detection
+//   finds nothing in the blurred frames, and the drink drops out. This is a
+//   large part of what reads as "glitching" on a table where the phone is
+//   moving slightly.
+//
+//   Auto-exposure — brightness drifts frame to frame, so the same card's
+//   features have different contrast each time it is matched.
+//
+// Where the browser allows it, pinning these makes tracking measurably
+// steadier. Support is the catch: Chrome on Android implements most of these
+// MediaTrack constraints; iOS Safari implements almost none, and silently
+// ignores what it does not support. So this is a best-effort improvement for
+// Android and a no-op on iPhone — it cannot make anything worse.
+//
+// ?torch=1 turns the flashlight on, which in a dim bar is worth more than any
+// software tuning: it is the single biggest tracking lever available, because
+// it fixes the input rather than the processing. Off by default — a phone
+// unexpectedly lighting up is startling, so it stays opt-in.
+async function tuneCameraTrack(video) {
+  const track = video?.srcObject?.getVideoTracks?.()[0];
+  if (!track?.getCapabilities) return null;
+
+  let caps = {};
+  try {
+    caps = track.getCapabilities() || {};
+  } catch {
+    return null; // Safari throws rather than returning an empty set
+  }
+
+  const advanced = [];
+  if (caps.focusMode?.includes("continuous")) advanced.push({ focusMode: "continuous" });
+  if (caps.exposureMode?.includes("continuous")) advanced.push({ exposureMode: "continuous" });
+  if (caps.whiteBalanceMode?.includes("continuous"))
+    advanced.push({ whiteBalanceMode: "continuous" });
+  if (TORCH && caps.torch) advanced.push({ torch: true });
+
+  if (advanced.length) {
+    try {
+      await track.applyConstraints({ advanced });
+    } catch {
+      // A browser may advertise a capability and still refuse it. Tracking
+      // works without this, so a failure here is not worth surfacing.
+    }
+  }
+
+  // Reported so a venue can see what its actual phones support — with
+  // ?debug=1 this is the fastest way to tell whether tuning did anything.
+  const applied = {
+    supported: Object.keys(caps).filter((k) =>
+      ["focusMode", "exposureMode", "whiteBalanceMode", "torch"].includes(k)
+    ),
+    applied: advanced,
+    resolution: `${track.getSettings?.().width ?? "?"}x${track.getSettings?.().height ?? "?"}`,
+  };
+  if (DEBUG) console.log("[ar] camera", applied);
+  return applied;
 }
 
 export function isImageTrackingSupported() {
@@ -273,6 +340,9 @@ export async function startImageTrackingAR({
   };
 
   await mindarThree.start();
+
+  // Only possible once the stream exists.
+  await tuneCameraTrack(mindarThree.video);
 
   const clock = new THREE.Clock();
   renderer.setAnimationLoop(() => {
