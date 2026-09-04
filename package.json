@@ -2,7 +2,7 @@
   "name": "bar-ar-gift",
   "version": "1.0.0",
   "private": true,
-  "description": "Web AR 'gift on your table' experience — scan a QR code, tap, and an animated 3D gift appears through the phone camera. No app install.",
+  "description": "Web AR 'gift on your table' experience \u2014 scan a QR code, tap, and an animated 3D gift appears through the phone camera. No app install.",
   "type": "module",
   "scripts": {
     "dev": "npx --yes serve . -l 5000",
@@ -12,7 +12,8 @@
     "compress": "echo 'Usage: npm run compress -- path/to/model.glb' && exit 1",
     "compress:glb": "npx --yes @gltf-transform/cli draco",
     "compress:textures": "npx --yes @gltf-transform/cli webp",
-    "validate:glb": "npx --yes @gltf-transform/cli validate"
+    "validate:glb": "npx --yes @gltf-transform/cli validate",
+    "flight": "node scripts/build-flight.mjs"
   },
   "devDependencies": {
     "canvas": "3.2.3",

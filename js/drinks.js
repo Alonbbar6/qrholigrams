@@ -93,6 +93,29 @@ export const DRINKS = [
     emoji: "🍒",
     accent: "#7b2d5e",
   },
+
+  // ---------------------------------------------------------------------
+  // THE FLIGHT — every drink in one placement
+  // ---------------------------------------------------------------------
+  // Built by `npm run flight`, which merges the light drinks/ar/ builds into
+  // a single 73 cm row centred on the origin.
+  //
+  // It exists because of a hard platform limit: native AR on iOS is a FILE
+  // handoff to Quick Look, so a drink cannot be swapped once placed — the
+  // page is not running and there is no scene to change. Putting all six in
+  // one file sidesteps that entirely. One tap, the whole menu on the table,
+  // rock steady, and nothing to switch because nothing is hidden.
+  //
+  // It rides the ordinary carousel machinery: same screen, same AR button,
+  // same modes. Just another entry with a model behind it.
+  {
+    id: "menu-flight",
+    name: "The Whole Menu",
+    tagline: "All six, side by side on your table",
+    price: "Tasting flight",
+    emoji: "🍸",
+    accent: "#6fe3ff",
+  },
 ];
 
 // Resolve a drink's model path from its id. Kept as a function rather than a
