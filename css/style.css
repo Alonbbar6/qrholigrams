@@ -598,11 +598,17 @@ body {
   background: linear-gradient(135deg, var(--color-accent), var(--color-accent-2));
 }
 
-/* A mode the device cannot do stays visible but inert, so the choice still
-   explains itself rather than silently offering only one option. */
-.ar-mode-opt:disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
+/* A mode this device cannot run. Dimmed, but still pressable — tapping it
+   explains why, which a `disabled` button cannot do because it swallows the
+   click. */
+.ar-mode-opt--off {
+  opacity: 0.4;
+}
+
+.ar-mode-opt--off[aria-pressed="true"] {
+  /* Can't be selected, so never show the selected fill. */
+  background: transparent;
+  color: var(--color-text-dim);
 }
 
 /* Emphasised only when the customer returns from an AR session, so the

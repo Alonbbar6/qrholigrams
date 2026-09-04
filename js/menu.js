@@ -245,6 +245,33 @@ function startLoadTimer() {
   }, STALL_TIMEOUT_MS);
 }
 
+// Why a mode cannot run here. Written for a customer, not a developer: the
+// useful information is "will this ever work on my phone", not an API name.
+const UNAVAILABLE_REASON = {
+  xr:
+    "Place & swipe needs WebXR — Android Chrome with Google Play Services for AR. " +
+    "iPhones don't support it yet, so use Steady there.",
+  steady:
+    "Placing needs your phone's built-in AR viewer. Desktop browsers don't have one — " +
+    "open this on a phone.",
+  auto:
+    "Card mode needs camera access and 3D support. Check the camera permission for this site.",
+};
+
+let reasonTimer = null;
+function explainUnavailable(mode) {
+  const hint = document.getElementById("drink-ar-hint");
+  hint.hidden = false;
+  hint.textContent = UNAVAILABLE_REASON[mode];
+  hint.classList.add("drink-ar-hint--nudge");
+  track("ar_mode_unavailable", { mode });
+  clearTimeout(reasonTimer);
+  reasonTimer = setTimeout(() => {
+    hint.classList.remove("drink-ar-hint--nudge");
+    syncArMode();
+  }, 7000);
+}
+
 // Shown once the customer comes back out of native AR. Placement cannot be
 // carried across sessions, so the honest framing is "swipe, then place the
 // next one" rather than implying the drink can be changed in place.
@@ -276,7 +303,13 @@ function syncArMode() {
     steady: document.getElementById("ar-mode-steady"),
     auto: document.getElementById("ar-mode-auto"),
   };
-  for (const k of ["xr", "steady", "auto"]) btn[k].disabled = !avail[k];
+  // Deliberately NOT `disabled`. A disabled button swallows its own clicks,
+  // so a customer tapping an unavailable mode got silence and no idea why.
+  // These stay pressable and explain themselves on tap instead.
+  for (const k of ["xr", "steady", "auto"]) {
+    btn[k].classList.toggle("ar-mode-opt--off", !avail[k]);
+    btn[k].setAttribute("aria-disabled", String(!avail[k]));
+  }
 
   // Never leave the selection pointing at a mode that cannot run. Prefer the
   // best available rather than an arbitrary one.
@@ -527,6 +560,15 @@ export function initDrinksMenu({ onExitToIntro, onShowDrinkOnCard, trackEvent = 
   // later — syncArMode is re-run once the answer arrives.
   isWebXRSupported().then((ok) => {
     webxrOK = ok;
+    if (new URLSearchParams(location.search).get("debug") === "1") {
+      console.log("[ar] modes", {
+        webxr: ok,
+        navigatorXr: Boolean(navigator.xr),
+        canActivateAR: Boolean(viewer?.canActivateAR),
+        cameraAndWebGL: cardArAvailable(),
+        secureContext: window.isSecureContext,
+      });
+    }
     if (!drinkScreen.classList.contains("screen--hidden")) syncArMode();
   });
 
@@ -593,7 +635,11 @@ export function initDrinksMenu({ onExitToIntro, onShowDrinkOnCard, trackEvent = 
   });
 
   for (const [id, mode] of [["ar-mode-xr", "xr"], ["ar-mode-steady", "steady"], ["ar-mode-auto", "auto"]]) {
-    document.getElementById(id).addEventListener("click", () => {
+    document.getElementById(id).addEventListener("click", (e) => {
+      if (e.currentTarget.getAttribute("aria-disabled") === "true") {
+        explainUnavailable(mode);
+        return;
+      }
       arMode = mode;
       saveMode();
       syncArMode();
