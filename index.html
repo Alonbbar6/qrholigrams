@@ -168,6 +168,12 @@
         <span class="reveal-btn-icon">📱</span>
       </button>
       <p id="drink-ar-hint" class="drink-ar-hint" hidden></p>
+
+      <!-- Shortcut to the whole-menu placement. It is an ordinary carousel
+           entry, but six swipes away, so nobody would find it. This matters
+           most in Steady mode: native AR cannot swap a drink once placed, so
+           placing all six at once is the only way to see more than one. -->
+      <button id="drink-flight-btn" class="menu-btn" hidden></button>
     </div>
     <button id="drink-back-btn" class="back-btn" aria-label="Back to menu">← Menu</button>
   </section>

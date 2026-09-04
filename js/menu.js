@@ -56,6 +56,13 @@ let track = () => {};
 
 const currentDrink = () => DRINKS[currentIndex];
 
+// The combined all-six model, built by `npm run flight`. Treated as an
+// ordinary carousel entry so it reuses every existing path, but surfaced with
+// its own shortcut because six swipes is not discovery.
+const FLIGHT_ID = "menu-flight";
+const flightIndex = () => DRINKS.findIndex((d) => d.id === FLIGHT_ID);
+const onFlight = () => currentDrink()?.id === FLIGHT_ID;
+
 // ---------------------------------------------------------------------------
 // AR MODE — "steady" (native) vs "auto" (card tracking)
 // ---------------------------------------------------------------------------
@@ -329,20 +336,43 @@ function syncArMode() {
   const label = document.getElementById("drink-ar-btn").querySelector(".reveal-btn-label");
   const icon = document.getElementById("drink-ar-btn").querySelector(".reveal-btn-icon");
   const hint = document.getElementById("drink-ar-hint");
-  const COPY = {
-    xr: ["Place it on your table", "✨",
-         "Place it once, then keep swiping — the drink changes without moving"],
-    steady: ["Place it on your table", "📱",
-         "Point at your table and tap your card — it stays exactly where you put it"],
-    auto: ["Show it on my card", "🃏",
-         "Point at the card and it appears by itself — steadier in good light"],
-  };
+  // The flight needs its own copy in every mode: "Place it on your table"
+  // reads as a single drink, which is exactly the wrong expectation when one
+  // tap is about to put all six down.
+  const COPY = onFlight()
+    ? {
+        xr: ["Place all six on your table", "🍸",
+             "The whole menu, in one placement — swipe still works afterwards"],
+        steady: ["Place all six on your table", "🍸",
+             "One tap puts the whole menu on your table — nothing to switch"],
+        auto: ["Show all six on my card", "🍸",
+             "The whole menu appears on the card together"],
+      }
+    : {
+        xr: ["Place it on your table", "✨",
+             "Place it once, then keep swiping — the drink changes without moving"],
+        steady: ["Place it on your table", "📱",
+             "Point at your table and tap your card — it stays exactly where you put it"],
+        auto: ["Show it on my card", "🃏",
+             "Point at the card and it appears by itself — steadier in good light"],
+      };
   [label.textContent, icon.textContent, hint.textContent] = COPY[arMode];
 
   const any = avail.xr || avail.steady || avail.auto;
   document.getElementById("ar-mode-toggle").hidden = !any;
   document.getElementById("drink-ar-btn").hidden = !any;
   hint.hidden = !any;
+
+  // The shortcut only means something when there is a flight to jump to and
+  // an AR mode to place it with.
+  const flightBtn = document.getElementById("drink-flight-btn");
+  const hasFlight = flightIndex() >= 0;
+  flightBtn.hidden = !any || !hasFlight;
+  if (hasFlight) {
+    flightBtn.innerHTML = onFlight()
+      ? '<span aria-hidden="true">🥃</span> Back to single drinks'
+      : '<span aria-hidden="true">🍸</span> Place all six at once';
+  }
 }
 
 function onModelLoad() {
@@ -657,6 +687,15 @@ export function initDrinksMenu({ onExitToIntro, onShowDrinkOnCard, trackEvent = 
       track("ar_mode_changed", { mode });
     });
   }
+
+  document.getElementById("drink-flight-btn").addEventListener("click", () => {
+    const target = onFlight() ? 0 : flightIndex();
+    if (target < 0) return;
+    track("flight_shortcut", { to: DRINKS[target]?.id });
+    // The copy is set by syncArMode once the model loads — setting it here
+    // too would just be overwritten a moment later.
+    openDrinkAt(target);
+  });
 
   document.getElementById("drink-back-btn").addEventListener("click", () => {
     clearTimeout(loadTimer);
