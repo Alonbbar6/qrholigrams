@@ -1,42 +1,71 @@
-# Table Gift AR — Image-Tracking Web AR for a Bar
+# The Alibi Bar — Cocktails in AR
 
-Scan the QR code on a printed table card → tap once → point the camera back at
-that same card → an animated 3D gift appears **locked to the card**, staying
-attached to the artwork as you move your phone around it.
+Scan the QR code on a printed table card and the bar's cocktails appear in 3D,
+with prices. Swipe between them, then put one on your table in AR. No app.
 
 ```
 Printed table card (QR + branded artwork)
-   → phone camera scans QR (no app)
-   → branded intro screen, "Tap to see your gift"
-   → camera opens, recognizes THE CARD ITSELF as an AR marker
-   → gift renders locked to the card, tracking as you move
+   → phone camera scans QR (no app install)
+   → swipeable 3D menu: six cocktails, name / tagline / price
+   → "Place it on your table"  → native AR, rock steady
+     or "Show it on my card"   → auto-anchors to the printed card
 ```
 
 **Live:** https://qrholigrams-bar-gift.netlify.app
 
+The gift reveal this project started as still exists at `?gift=1` — the same
+card-tracking machinery, pointed at a present instead of a drink.
+
 ---
 
-## 1. The AR approach (and why it changed)
+## 1. Two AR engines, and why both are here
 
-There are two very different ways to do web AR, and this project uses the
-second one:
+Neither engine wins outright, so the drink screen offers a toggle and
+remembers the choice per device.
 
-| | Native AR (`<model-viewer>`) | **Image tracking (MindAR)** ← *this project* |
+| | **Steady** *(default)* | **Auto on card** |
 |---|---|---|
-| How it anchors | Scans the *floor/table surface*, you tap to drop the model | Continuously recognizes **the printed card** and locks the model to it |
-| Feels like | Model sits on the table where you tapped | Model is *part of the card* — move the card, it follows |
-| Runs in | Native OS viewer (iOS Quick Look / Android Scene Viewer) | Entirely in the browser (three.js + WebGL + camera) |
-| Needs | `.glb` + `.usdz` | `.glb` + a compiled `.mind` target per card |
-| Low light | Very robust | **More sensitive** — needs decent light + a detailed card |
+| Runs in | iOS Quick Look / Android Scene Viewer | the browser (MindAR + three.js) |
+| Anchors to | wherever the customer taps | the printed card, unaided |
+| How it tracks | ARKit/ARCore: camera **fused with motion sensors**, plus a map of the room | re-solves the card's pose from camera pixels, every frame, with no memory |
+| Stability | **does not move, in any lighting** | drifts and flickers in a dim room |
+| Cost | one tap to position it | none |
+| Needs | `.glb` (USDZ auto-generated) | `.glb` + a compiled `.mind` target per card |
 
-We switched to image tracking because "make it look like part of the card"
-is not something native Quick Look / Scene Viewer can do — they anchor to
-surfaces, not to artwork.
+The middle row is the whole story. ARKit/ARCore carry the pose through a bad
+frame using the gyroscope, and remember where the object sits in the room.
+MindAR has neither — one blurred or dim frame and there is simply no answer,
+so the drink drops out.
 
-**The tradeoff to know:** image tracking is more finicky in dim bar lighting
-than native surface AR. The card design compensates by packing lots of
-visual detail (scattered shapes, border, text) across the whole card —
-a bare QR on a blank background tracks poorly. Don't strip that texture out.
+### Things already tried, so nobody retries them
+
+- **Redesigning the card for better tracking does not work.** Measured: the
+  current card yields 62 tracking points; adding 400 large distinct shapes
+  (44% of pixels changed) yielded 64. Adding fine grain *halved* it to 31,
+  because MindAR rejects features that resemble their neighbours. Do not
+  reprint hoping for stability.
+- **Native AR cannot be anchored to the card.** USDZ has an `image` anchor
+  type, but AR Quick Look ignores it; Android Scene Viewer is plane-only.
+  Neither exposes any API to constrain or report placement.
+- **WebXR image tracking** would do both at once, but does not exist on iOS
+  Safari, so it would cover only half of customers.
+- **8th Wall** is no longer an option: hosted service shut down 28 Feb 2026,
+  and the open-source release excludes SLAM — the part that would have helped.
+
+What genuinely helps card tracking: `?torch=1` (biggest single lever in a dark
+bar), a larger matte print lying flat, and light above the table.
+
+### On-site tuning knobs
+
+All URL params, so a venue can tune against its own phones without a deploy:
+
+| Param | Default | What it does |
+|---|---|---|
+| `?miss=` | 18 | frames of lost tracking before the drink hides |
+| `?warmup=` | 5 | frames of detection before it appears |
+| `?mincf=` `?beta=` | 0.001 / 1000 | One Euro filter (A/B tested; defaults won) |
+| `?torch=1` | off | turns the phone flashlight on |
+| `?debug=1` | off | logs camera capabilities and pose samples |
 
 ---
 
@@ -50,13 +79,15 @@ a bare QR on a blank background tracks poorly. Don't strip that texture out.
 ├── js/ar-experience.js           MindAR + three.js setup, model load, animation
 ├── js/drinks.js                  ★ THE MENU — edit this to change drinks
 ├── js/menu.js                    Cocktail browser + native-AR handoff
-├── js/vendor/                    Vendored libs (no CDN at runtime)
+├── js/vendor/                    Vendored libs (NOTHING is fetched at runtime)
 │   ├── confetti.js                 canvas-confetti (MIT)
-│   ├── three/                      three.js r152 + GLTFLoader + CSS3DRenderer
-│   ├── model-viewer/               <model-viewer> 3.5.0 (fallback + menu)
+│   ├── three/                      three.js r152 + GLTFLoader + DRACOLoader
+│   ├── model-viewer/               <model-viewer> 3.5.0 (menu + fallback)
+│   ├── draco/                      Draco decoder — see the warning below
 │   └── mindar/                     MindAR image-tracking build
 ├── assets/models/gift-placeholder.glb    The 3D gift
-├── assets/models/drinks/*.glb            One per drink id (see js/drinks.js)
+├── assets/models/drinks/*.glb            Full detail: 3D browse + native AR
+├── assets/models/drinks/ar/*.glb         Light copies: card AR only
 ├── assets/cards/table-N-card.png         PRINT THESE — table tent artwork
 ├── assets/targets/table-N.mind           Compiled AR target per card
 ├── scripts/generate-table.mjs    ★ Main generator: card + QR + AR target
@@ -68,21 +99,36 @@ a bare QR on a blank background tracks poorly. Don't strip that texture out.
 
 No build step, no framework, no bundler — plain static files.
 
+> ⚠️ **Vendoring means nothing is fetched at runtime — check that stays true.**
+> A vendored library can still reach out on its own: `<model-viewer>` pulls its
+> Draco decoder from `gstatic.com` unless `dracoDecoderLocation` is set, and
+> three.js needs `DRACOLoader.setDecoderPath()`. Compressing the drink models
+> silently reintroduced that CDN dependency once already. The failure is nasty
+> — on a captive-portal wifi the request hangs, no `load` or `error` fires, and
+> every drink shows "coming soon" while the file itself is perfectly fine.
+
 ---
 
 ## 2b. The cocktail menu (3D browse + native AR)
 
-Tapping **"Browse the bar menu"** on the intro screen opens a list of drinks.
-Tapping a drink shows it in 3D, and **"View on your table"** places it in the
-room at real size.
+Scanning a table card lands on the intro; one tap opens the swipeable menu.
+Swipe or use the arrows to move between drinks — each shows its name, tagline
+and price, and the dots track position. Then pick an AR mode and place it.
 
-**This uses a different AR stack than the gift, on purpose.** The gift must
-lock to the printed card, which only in-browser image tracking can do. Drinks
-don't — so they hand off to **iOS Quick Look / Android Scene Viewer**, which
-track with ARKit/ARCore SLAM instead of re-solving a marker pose from camera
-pixels every frame. Per the table in section 1, that's *"Very robust"* in low
-light where image tracking is *"More sensitive"* — which matters a lot in a
-bar. The menu does not wobble in a dim room; the gift still can.
+Swiping stays smooth in any lighting because it is only a 3D view; the camera
+is not involved until an AR mode is chosen.
+
+### Routes
+
+| URL | Lands on |
+|---|---|
+| `/?table=N` | intro → AR drink carousel *(what the printed cards encode)* |
+| `?browse=1` | the swipeable 3D carousel, no camera |
+| `?menu=1` | the drinks list |
+| `?gift=1` | the original gift reveal on the card |
+
+The cards encode `/?table=N` with no mode flag, so the landing experience can
+be changed without reprinting anything.
 
 ### Choosing how AR anchors
 
@@ -192,8 +238,9 @@ later give different tables different gifts by branching on `tableId` in
    monitor / tablet also works — but printed is the real test.*
 2. **Scan the QR** with your phone's **native camera app**. A banner appears →
    tap it to open the page in Safari (iPhone) or Chrome (Android).
-3. **Expect the intro screen** — dark background, floating gift emoji,
-   pulsing "Tap to see your gift" button.
+3. **Expect the intro screen** — dark background, floating badge, pulsing
+   "Tap to see the drinks" button. (At `?gift=1` the same button reads
+   "Tap to see your gift" and runs the original reveal instead.)
 4. **Tap the button.** Confetti fires, then the browser asks for **camera
    permission — tap Allow**. (Denying it drops you to the 3D fallback view.)
 5. **Point the camera at the same printed card.** Hold it so the whole card
@@ -285,7 +332,25 @@ the page loads); `page_view` per table is the closest proxy.
 
 ## 8. What you still need to provide
 
-- [ ] Bar name + copy, brand colors, logo file
-- [ ] Your Meshy `.glb` gift model
-- [ ] How many tables (then run `npm run table -- N` for each)
-- [ ] (Optional) analytics platform to wire `trackEvent` into
+**Blocking — the menu is live with invented content:**
+
+- [ ] **Real drink names, taglines and prices.** The six currently shipping
+      ("The Alibi Sour", £11–£14, and the rest) are placeholders, not your
+      menu. One file: [`js/drinks.js`](js/drinks.js).
+- [ ] Bar name + copy, brand colours, logo file
+
+**Done:**
+
+- [x] All six drink models (full + light card-AR variants)
+- [x] Table cards, QR codes and compiled `.mind` targets for tables 1–4
+
+**Optional:**
+
+- [ ] Re-roll the **Old Fashioned** — the only model that came out badly, an
+      opaque cup with no ice. Clear spirit over clear ice is the one thing AI
+      3D reliably fails; shooting it *without* the ice sphere should fix it.
+      The other five are fine because their drinks are opaque.
+- [ ] A `.usdz` per drink for iOS, if the auto-generated one looks off —
+      `iosModel` in [`js/drinks.js`](js/drinks.js) picks it up.
+- [ ] More tables: `npm run table -- N`
+- [ ] Analytics platform to wire `trackEvent` into
