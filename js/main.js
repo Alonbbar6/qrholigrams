@@ -130,23 +130,17 @@ async function startCardAR({ modelSrc, label, hint } = {}) {
   }
 }
 
-// The intro's primary button now opens the DRINK carousel on the card —
-// that is what a customer scanning a table card is here for. The gift is
-// still reachable at ?gift=1 and from the menu screen.
-revealBtn.addEventListener("click", async () => {
-  trackEvent("ar_carousel_tapped", { table: tableId });
+// The intro's primary button opens the swipeable drinks menu.
+//
+// It used to jump straight into card AR. That put the customer on a screen
+// with no way back to the AR-mode toggle — the toggle lives on the drink
+// screen, so going directly to the camera made choosing an engine impossible
+// and the option looked missing. The menu is also the honest first screen:
+// it shows prices and needs no camera permission to be useful.
+revealBtn.addEventListener("click", () => {
+  trackEvent("menu_tapped", { table: tableId });
   fireConfetti();
-  arCarouselActive = true;
-  arReturnsToCarousel = false;
-  buildArDots();
-  await startCardAR({
-    modelSrc: `assets/models/drinks/${DRINKS[arIndex].id}.glb`,
-    label: DRINKS[arIndex].id,
-    hint: "Point your camera at the card on your table 🔍",
-  });
-  // Only meaningful once a session exists; showArDrink swaps the model and
-  // fills in the details panel.
-  if (activeSession) showArDrink(arIndex);
+  openCarousel(0);
 });
 
 // Where ← Back returns to from the card-AR screen: the gift came from the
@@ -237,14 +231,25 @@ drinksMenu = initDrinksMenu({
   onExitToIntro: () => showScreen(introScreen),
   // "See it on your card" — stand THIS drink on the printed table card,
   // using the same image tracking as the gift.
-  onShowDrinkOnCard: (drink, modelSrc) => {
+  onShowDrinkOnCard: async (drink, modelSrc) => {
+    const index = DRINKS.findIndex((d) => d.id === drink.id);
     arReturnsToCarousel = true;
-    lastCardDrinkIndex = DRINKS.findIndex((d) => d.id === drink.id);
-    startCardAR({
+    lastCardDrinkIndex = index;
+
+    // Card AR is a carousel too — the customer keeps the price overlay and
+    // can swipe to the next drink without leaving the camera. Without these
+    // the overlay stays hidden and swiping does nothing, which made card AR
+    // feel like a dead end when it was reached from the toggle.
+    arCarouselActive = true;
+    arIndex = index;
+    buildArDots();
+
+    await startCardAR({
       modelSrc,
       label: drink.id,
       hint: `Point your camera at the card to see the ${drink.name} 🍸`,
     });
+    if (activeSession) showArDrink(arIndex);
   },
   trackEvent,
 });
