@@ -102,26 +102,45 @@ export async function startWebXR({ overlayRoot, modelSrc, onPlaced, onExit }) {
   let swapToken = 0;
   let placed = false;
 
-  // Swap the drink without touching the anchor. This is the whole point of
-  // the mode: the pose stays exactly where the customer put it.
-  async function setModel(src) {
-    const token = ++swapToken;
+  // Every drink lives in the anchor group at once, all hidden but one, so a
+  // swipe is a visibility flip rather than a download and decode. Same
+  // approach as card AR — see the MODEL CACHE note in ar-experience.js.
+  const cache = new Map();
+
+  async function ensureModel(src) {
+    if (cache.has(src)) return cache.get(src);
     let gltf;
     try {
       gltf = await loader.loadAsync(arVariantOf(src));
     } catch {
       gltf = await loader.loadAsync(src);
     }
-    if (token !== swapToken) return; // superseded by a faster swipe
-
-    if (currentModel) {
-      anchorGroup.remove(currentModel);
-      disposeTree(currentModel);
-    }
+    if (cache.has(src)) return cache.get(src); // a concurrent call won
     // Models are already authored at real-world metres by prep-drink.mjs, and
     // WebXR is metric, so no scaling — a 0.09 m glass is 9 cm on the table.
-    currentModel = gltf.scene;
-    anchorGroup.add(currentModel);
+    const model = gltf.scene;
+    model.visible = false;
+    anchorGroup.add(model);
+    cache.set(src, model);
+    return model;
+  }
+
+  // Swap the drink without touching the anchor. This is the whole point of
+  // the mode: the pose stays exactly where the customer put it.
+  async function setModel(src) {
+    const token = ++swapToken;
+    const model = await ensureModel(src);
+    if (token !== swapToken) return; // superseded by a faster swipe
+    if (currentModel && currentModel !== model) currentModel.visible = false;
+    model.visible = true;
+    currentModel = model;
+  }
+
+  // Warm the rest of the menu once the customer has placed their first drink.
+  async function preload(srcs) {
+    for (const src of srcs) {
+      try { await ensureModel(src); } catch { /* no model yet for this drink */ }
+    }
   }
 
   await setModel(modelSrc);
@@ -142,7 +161,9 @@ export async function startWebXR({ overlayRoot, modelSrc, onPlaced, onExit }) {
 
   session.addEventListener("end", () => {
     renderer.setAnimationLoop(null);
-    if (currentModel) disposeTree(currentModel);
+    // Every cached drink, not just the visible one.
+    for (const model of cache.values()) disposeTree(model);
+    cache.clear();
     renderer.dispose();
     onExit?.();
   });
@@ -166,6 +187,7 @@ export async function startWebXR({ overlayRoot, modelSrc, onPlaced, onExit }) {
 
   return {
     setModel,
+    preload,
     isPlaced: () => placed,
     end: () => session.end().catch(() => {}),
   };

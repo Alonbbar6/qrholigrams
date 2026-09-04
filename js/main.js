@@ -122,6 +122,17 @@ async function startCardAR({ modelSrc, label, hint } = {}) {
       },
     });
     trackEvent("ar_session_started", { table: tableId, subject: label });
+
+    // Warm the rest of the menu in the background. The first drink is already
+    // on the card by now, so this competes with nothing the customer is
+    // waiting on — and it turns every later swipe into a visibility flip
+    // rather than a download-and-decode.
+    if (arCarouselActive) {
+      activeSession
+        ?.preload(DRINKS.map((d) => `assets/models/drinks/${d.id}.glb`))
+        .then(() => trackEvent("ar_preload_complete", { count: DRINKS.length }))
+        .catch(() => {});
+    }
   } catch (err) {
     // Most commonly: camera permission denied, or no camera available.
     trackEvent("ar_session_failed", { table: tableId, subject: label, reason: err?.message });

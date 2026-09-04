@@ -241,15 +241,31 @@ export async function startImageTrackingAR({
   let currentModel = null;
   let swapToken = 0;
 
+  // ---------------------------------------------------------------------
+  // MODEL CACHE — every drink resident, one visible
+  // ---------------------------------------------------------------------
+  // Swapping used to mean download, Draco-decode, fit, then dispose the old
+  // one. That is a visible hitch on every swipe and it re-decodes the same
+  // drink each time a customer swipes back past it.
+  //
+  // Instead each drink is fitted once and kept in the scene graph with
+  // .visible = false. A swipe becomes two boolean flips, which is instant and
+  // allocates nothing.
+  //
+  // The cost is GPU memory, which is exactly why card AR uses the light
+  // drinks/ar/ builds: six of those is roughly 276 k triangles and ~4.8 MP of
+  // texture in total, less than ONE full-detail model would have been.
+  const cache = new Map();
+
   // Swap the model standing on the card WITHOUT tearing down the MindAR
   // session. Restarting would drop the camera stream and re-run tracking
   // acquisition — on a phone that's a visible stall and, on iOS, sometimes a
   // permission re-prompt. Keeping one session alive is what makes swiping
   // between drinks in AR feel instant.
-  async function setModel(src) {
-    // Guard against a customer swiping faster than the models load: only the
-    // most recent request may install itself.
-    const token = ++swapToken;
+  // Load, fit and park a drink in the scene graph, hidden. Returns the cached
+  // object on any later call, so this is cheap to call speculatively.
+  async function ensureModel(src) {
+    if (cache.has(src)) return cache.get(src);
 
     // Prefer the lighter card-AR build. MindAR is decoding a camera feed and
     // re-solving the card's pose every frame, so renderer time is taken
@@ -262,29 +278,9 @@ export async function startImageTrackingAR({
     } catch {
       gltf = await loader.loadAsync(src);
     }
-    if (token !== swapToken) return; // superseded by a later swipe
 
-    if (currentModel) {
-      // Stop any running clip before the model leaves the graph, so a
-      // half-finished action can't keep mutating a disposed object.
-      mixer?.stopAllAction();
-      standGroup.remove(currentModel);
-      // Free GPU memory explicitly — a browsing session through six drinks
-      // otherwise accumulates every geometry and texture it has ever shown.
-      currentModel.traverse((o) => {
-        if (!o.isMesh) return;
-        o.geometry?.dispose();
-        const mats = Array.isArray(o.material) ? o.material : [o.material];
-        for (const m of mats) {
-          if (!m) continue;
-          for (const k of ["map", "normalMap", "roughnessMap", "metalnessMap", "emissiveMap", "aoMap"]) {
-            m[k]?.dispose();
-          }
-          m.dispose();
-        }
-      });
-    }
-    mixer = null;
+    // A concurrent call for the same src may have finished first.
+    if (cache.has(src)) return cache.get(src);
 
     const model = gltf.scene;
     model.rotation.x = Math.PI / 2;
@@ -317,14 +313,53 @@ export async function startImageTrackingAR({
     model.position.y -= c.y;
     model.position.z -= fitted.min.z;
 
-    // Only now does it join the tracked graph.
+    // Only now does it join the tracked graph — hidden until selected.
+    model.visible = false;
     standGroup.add(model);
 
-    if (gltf.animations?.length) {
-      mixer = new THREE.AnimationMixer(model);
-      mixer.clipAction(gltf.animations[0]).play();
+    const entry = { model, animations: gltf.animations ?? [] };
+    cache.set(src, entry);
+    return entry;
+  }
+
+  // Show one drink and hide the rest. Instant once cached.
+  async function setModel(src) {
+    // Guard against a customer swiping faster than the models load: only the
+    // most recent request may install itself.
+    const token = ++swapToken;
+    const entry = await ensureModel(src);
+    if (token !== swapToken) return; // superseded by a later swipe
+
+    if (currentModel && currentModel !== entry.model) {
+      // Stop any running clip before hiding, so an animation cannot keep
+      // burning frame time on a drink nobody can see.
+      mixer?.stopAllAction();
+      currentModel.visible = false;
     }
-    currentModel = model;
+    mixer = null;
+
+    entry.model.visible = true;
+    currentModel = entry.model;
+
+    if (entry.animations.length) {
+      mixer = new THREE.AnimationMixer(entry.model);
+      mixer.clipAction(entry.animations[0]).play();
+    }
+  }
+
+  // Warm the cache in the background so later swipes are instant. Sequential
+  // and deliberately after the first drink is already on screen: a bar's wifi
+  // should spend its first bytes on what the customer is looking at, not on
+  // five drinks they have not swiped to yet.
+  async function preload(srcs) {
+    for (const src of srcs) {
+      try {
+        await ensureModel(src);
+      } catch {
+        // A drink with no model yet simply stays uncached; setModel will
+        // surface the failure if the customer actually swipes to it.
+      }
+    }
   }
 
   await setModel(modelSrc);
@@ -372,5 +407,6 @@ export async function startImageTrackingAR({
   return {
     stop: () => mindarThree.stop(),
     setModel,
+    preload,
   };
 }

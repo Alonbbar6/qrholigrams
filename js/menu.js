@@ -486,6 +486,9 @@ async function enterWebXR(drink) {
         info.hidden = false;
         showXrDrink(xrIndex);
         track("xr_placed", { drink: DRINKS[xrIndex]?.id });
+        // Only now — the customer has what they came for, so the network is
+        // free to warm the rest and make later swipes instant.
+        xrSession?.preload(DRINKS.map((d) => modelPathFor(d))).catch(() => {});
       },
       onExit: () => {
         overlay.hidden = true;
