@@ -135,21 +135,29 @@ be changed without reprinting anything.
 Each drink offers a toggle between two genuinely different engines, because
 neither is strictly better:
 
-| | Steady | Auto on card |
-|---|---|---|
-| Engine | iOS Quick Look / Android Scene Viewer | MindAR image tracking |
-| Anchors to | wherever the customer taps | the printed card, automatically |
-| Stability | **does not move, in any light** | re-solved every frame; wobbles in dim rooms |
-| Cost | one tap to position it | none |
+| | ✨ Place & swipe | 📱 Steady | 🃏 Auto on card |
+|---|---|---|---|
+| Engine | **WebXR** in our own renderer | Quick Look / Scene Viewer | MindAR |
+| Anchors to | where you tap | where you tap | the printed card |
+| Stability | **steady** (platform tracker) | **steady** (platform tracker) | wobbles in dim rooms |
+| Change drink in place? | **yes — swipe, no re-placing** | no, re-place each time | yes |
+| Works on | Android Chrome | iOS **and** Android | iOS and Android |
 
-Steady is the default: ARKit/ARCore fuse the camera with the phone's motion
-sensors and keep a map of the room, so once the drink is placed it stays put.
-MindAR has neither — it re-guesses the card's pose from pixels every frame,
-which is why it drifts in a dark bar.
+**Place & swipe is the only mode that is both steady and swipeable**, and it
+is preferred wherever it exists. The reason it can do both is that the WebXR
+session runs inside *our* three.js renderer — so changing drinks is a
+scene-graph swap, exactly as in card AR — while the poses come from the same
+platform tracker native AR uses.
 
-There is no third option that does both. Native AR gives no API to constrain
-placement and ignores USDZ image anchors on iOS; WebXR image tracking would
-manage it but does not exist on iOS Safari at all.
+Native AR cannot do this because it is a **file handoff**, not a live scene:
+Safari passes a USDZ to AR Quick Look and Android fires an intent at Scene
+Viewer. The page is backgrounded, there is no scene to modify, and neither
+viewer reports where the object was placed. Changing the drink means handing
+over a different file, which is a new session on a blank slate.
+
+The catch on Place & swipe is coverage: **iPhone Safari does not implement
+WebXR** and Apple has committed to no timeline, so iPhones fall back to
+Steady. Its segment disables itself rather than disappearing.
 
 The choice is remembered per device in `localStorage`. A mode the device
 cannot do disables itself rather than disappearing, so the trade stays

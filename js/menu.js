@@ -21,6 +21,7 @@
 // ============================================================================
 
 import { DRINKS, modelPathFor, iosModelPathFor } from "./drinks.js";
+import { isWebXRSupported, startWebXR } from "./webxr-experience.js";
 
 // ---------------------------------------------------------------------------
 // DRACO DECODER — must be vendored, same as everything else
@@ -68,10 +69,16 @@ const currentDrink = () => DRINKS[currentIndex];
 const MODE_KEY = "alibi.arMode";
 let arMode = "steady";
 
+// Resolved once at startup. WebXR is the only mode that is steady AND lets the
+// drink change without re-placing, so where it exists it is the best of the
+// three — but iPhone Safari has no WebXR at all, so it can never be assumed.
+let webxrOK = false;
+let xrSession = null;
+
 function loadMode() {
   try {
     const v = localStorage.getItem(MODE_KEY);
-    if (v === "steady" || v === "auto") arMode = v;
+    if (v === "steady" || v === "auto" || v === "xr") arMode = v;
   } catch {
     // Private mode, blocked storage, embedded webview — the default stands.
   }
@@ -259,35 +266,39 @@ function showReturnPrompt() {
 // Reflect the chosen mode in the toggle, the button label and the hint, and
 // disable whichever modes this device cannot actually do.
 function syncArMode() {
-  const steadyOK = Boolean(viewer?.canActivateAR);
-  const autoOK = cardArAvailable();
+  const avail = {
+    xr: webxrOK,
+    steady: Boolean(viewer?.canActivateAR),
+    auto: cardArAvailable(),
+  };
+  const btn = {
+    xr: document.getElementById("ar-mode-xr"),
+    steady: document.getElementById("ar-mode-steady"),
+    auto: document.getElementById("ar-mode-auto"),
+  };
+  for (const k of ["xr", "steady", "auto"]) btn[k].disabled = !avail[k];
 
-  const steadyBtn = document.getElementById("ar-mode-steady");
-  const autoBtn = document.getElementById("ar-mode-auto");
-  steadyBtn.disabled = !steadyOK;
-  autoBtn.disabled = !autoOK;
-
-  // Never leave the selection pointing at a mode that cannot run.
-  if (arMode === "steady" && !steadyOK && autoOK) arMode = "auto";
-  if (arMode === "auto" && !autoOK && steadyOK) arMode = "steady";
-
-  steadyBtn.setAttribute("aria-pressed", String(arMode === "steady"));
-  autoBtn.setAttribute("aria-pressed", String(arMode === "auto"));
+  // Never leave the selection pointing at a mode that cannot run. Prefer the
+  // best available rather than an arbitrary one.
+  if (!avail[arMode]) arMode = ["xr", "steady", "auto"].find((k) => avail[k]) ?? arMode;
+  for (const k of ["xr", "steady", "auto"]) {
+    btn[k].setAttribute("aria-pressed", String(arMode === k));
+  }
 
   const label = document.getElementById("drink-ar-btn").querySelector(".reveal-btn-label");
   const icon = document.getElementById("drink-ar-btn").querySelector(".reveal-btn-icon");
   const hint = document.getElementById("drink-ar-hint");
-  if (arMode === "steady") {
-    label.textContent = "Place it on your table";
-    icon.textContent = "📱";
-    hint.textContent = "Point at your table and tap your card — it stays exactly where you put it";
-  } else {
-    label.textContent = "Show it on my card";
-    icon.textContent = "🃏";
-    hint.textContent = "Point at the card and it appears by itself — steadier in good light";
-  }
+  const COPY = {
+    xr: ["Place it on your table", "✨",
+         "Place it once, then keep swiping — the drink changes without moving"],
+    steady: ["Place it on your table", "📱",
+         "Point at your table and tap your card — it stays exactly where you put it"],
+    auto: ["Show it on my card", "🃏",
+         "Point at the card and it appears by itself — steadier in good light"],
+  };
+  [label.textContent, icon.textContent, hint.textContent] = COPY[arMode];
 
-  const any = steadyOK || autoOK;
+  const any = avail.xr || avail.steady || avail.auto;
   document.getElementById("ar-mode-toggle").hidden = !any;
   document.getElementById("drink-ar-btn").hidden = !any;
   hint.hidden = !any;
@@ -372,6 +383,109 @@ function attachSwipe(el) {
 }
 
 // ---------------------------------------------------------------------------
+// WEBXR SESSION — the mode that is steady AND swipeable
+// ---------------------------------------------------------------------------
+// The session renders in our own three.js context, so changing drinks is a
+// scene-graph swap exactly as it is in card AR — but the poses come from the
+// platform tracker that native AR uses, so the anchor does not drift. Place
+// once, swipe as much as you like, and the drink never has to be re-placed.
+let xrIndex = 0;
+
+function buildXrDots() {
+  const el = document.getElementById("xr-dots");
+  el.innerHTML = "";
+  DRINKS.forEach((drink, i) => {
+    const dot = document.createElement("button");
+    dot.className = "drink-dot";
+    dot.type = "button";
+    dot.style.pointerEvents = "auto";
+    dot.setAttribute("aria-label", `Show ${drink.name}`);
+    dot.addEventListener("click", () => showXrDrink(i));
+    el.appendChild(dot);
+  });
+}
+
+async function showXrDrink(index) {
+  xrIndex = (index + DRINKS.length) % DRINKS.length;
+  const drink = DRINKS[xrIndex];
+  document.getElementById("xr-name").textContent = drink.name;
+  document.getElementById("xr-price").textContent = drink.price;
+  [...document.getElementById("xr-dots").children].forEach((d, i) =>
+    d.classList.toggle("drink-dot--active", i === xrIndex)
+  );
+  track("xr_drink_shown", { drink: drink.id });
+  try {
+    await xrSession?.setModel(modelPathFor(drink));
+  } catch (err) {
+    track("xr_model_failed", { drink: drink.id, reason: err?.message });
+  }
+}
+
+async function enterWebXR(drink) {
+  const overlay = document.getElementById("xr-overlay");
+  const info = document.getElementById("xr-info");
+  const instructions = document.getElementById("xr-instructions");
+  xrIndex = DRINKS.findIndex((d) => d.id === drink.id);
+
+  overlay.hidden = false;
+  info.hidden = true;
+  instructions.hidden = false;
+  instructions.textContent = "Point at your table, then tap to place";
+
+  // Free the browser viewer's model first: the WebXR session opens a second
+  // WebGL context, and holding both is how a phone runs out of GPU memory.
+  viewer.removeAttribute("src");
+
+  try {
+    xrSession = await startWebXR({
+      overlayRoot: overlay,
+      modelSrc: modelPathFor(drink),
+      onPlaced: () => {
+        instructions.hidden = true;
+        info.hidden = false;
+        showXrDrink(xrIndex);
+        track("xr_placed", { drink: DRINKS[xrIndex]?.id });
+      },
+      onExit: () => {
+        overlay.hidden = true;
+        xrSession = null;
+        // Restore the browser view the customer came from.
+        openDrinkAt(xrIndex);
+      },
+    });
+    track("xr_session_started", { drink: drink.id });
+  } catch (err) {
+    // Permission refused, or the device claimed support it cannot deliver.
+    track("xr_session_failed", { reason: err?.message });
+    overlay.hidden = true;
+    xrSession = null;
+    openDrinkAt(xrIndex);
+  }
+}
+
+// Swipe inside the AR session. The overlay is pointer-events:none apart from
+// its controls, so these gestures reach here without stealing the taps the
+// session needs for placement.
+(function attachXrSwipe() {
+  const overlay = document.getElementById("xr-overlay");
+  if (!overlay) return;
+  let x0 = 0, y0 = 0, tracking = false;
+  overlay.addEventListener("pointerdown", (e) => {
+    tracking = true; x0 = e.clientX; y0 = e.clientY;
+  }, { passive: true });
+  overlay.addEventListener("pointerup", (e) => {
+    if (!tracking || !xrSession?.isPlaced()) { tracking = false; return; }
+    tracking = false;
+    const dx = e.clientX - x0, dy = e.clientY - y0;
+    if (Math.abs(dx) < 45) return;
+    if (Math.abs(dy) / Math.abs(dx) > 0.6) return;
+    showXrDrink(xrIndex + (dx < 0 ? 1 : -1));
+  }, { passive: true });
+  overlay.addEventListener("pointercancel", () => (tracking = false), { passive: true });
+  document.getElementById("xr-exit")?.addEventListener("click", () => xrSession?.end());
+})();
+
+// ---------------------------------------------------------------------------
 // SCREEN PLUMBING
 // ---------------------------------------------------------------------------
 function showScreen(screen) {
@@ -407,6 +521,14 @@ export function initDrinksMenu({ onExitToIntro, onShowDrinkOnCard, trackEvent = 
   loadMode();
   buildList();
   buildDots();
+  buildXrDots();
+
+  // Async, so the toggle starts without it and gains the option a moment
+  // later — syncArMode is re-run once the answer arrives.
+  isWebXRSupported().then((ok) => {
+    webxrOK = ok;
+    if (!drinkScreen.classList.contains("screen--hidden")) syncArMode();
+  });
 
   viewer.addEventListener("load", onModelLoad);
   viewer.addEventListener("error", onModelError);
@@ -458,7 +580,9 @@ export function initDrinksMenu({ onExitToIntro, onShowDrinkOnCard, trackEvent = 
   document.getElementById("drink-ar-btn").addEventListener("click", () => {
     const drink = currentDrink();
     track("drink_ar_opened", { drink: drink?.id, mode: arMode });
-    if (arMode === "auto") {
+    if (arMode === "xr") {
+      enterWebXR(drink);
+    } else if (arMode === "auto") {
       // main.js owns the MindAR session and the camera lifecycle.
       onShowOnCard?.(drink, modelPathFor(drink));
     } else {
@@ -468,7 +592,7 @@ export function initDrinksMenu({ onExitToIntro, onShowDrinkOnCard, trackEvent = 
     }
   });
 
-  for (const [id, mode] of [["ar-mode-steady", "steady"], ["ar-mode-auto", "auto"]]) {
+  for (const [id, mode] of [["ar-mode-xr", "xr"], ["ar-mode-steady", "steady"], ["ar-mode-auto", "auto"]]) {
     document.getElementById(id).addEventListener("click", () => {
       arMode = mode;
       saveMode();

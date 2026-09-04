@@ -149,6 +149,12 @@
 
            A segment disables itself when the device cannot do that mode. -->
       <div id="ar-mode-toggle" class="ar-mode-toggle" role="group" aria-label="AR mode" hidden>
+        <!-- Only offered where WebXR exists (Android Chrome and similar).
+             It is the only mode that is both steady and swipeable, so it is
+             preferred when present — but iPhone Safari has no WebXR at all. -->
+        <button id="ar-mode-xr" class="ar-mode-opt" type="button" aria-pressed="false">
+          <span aria-hidden="true">✨</span> Place &amp; swipe
+        </button>
         <button id="ar-mode-steady" class="ar-mode-opt" type="button" aria-pressed="true">
           <span aria-hidden="true">📱</span> Steady
         </button>
@@ -219,6 +225,24 @@
       </p>
     </div>
   </section>
+
+  <!-- ============ WEBXR OVERLAY ============ -->
+  <!-- Rendered over the live WebXR session via the dom-overlay feature. This
+       is what native AR cannot offer: ordinary HTML on top of the camera, so
+       the price, the dots and the swipe all keep working while the drink is
+       standing on the table. -->
+  <div id="xr-overlay" class="xr-overlay" hidden>
+    <p id="xr-instructions" class="xr-instructions">Point at your table, then tap to place</p>
+
+    <div id="xr-info" class="xr-info" hidden>
+      <div id="xr-dots" class="drink-dots"></div>
+      <h2 id="xr-name" class="ar-drink-name"></h2>
+      <p id="xr-price" class="ar-drink-price"></p>
+      <p class="ar-swipe-hint">‹ swipe to change drink ›</p>
+    </div>
+
+    <button id="xr-exit" class="xr-exit" type="button">Done</button>
+  </div>
 
   <!-- Confetti canvas overlay, sits above everything, ignores clicks -->
   <canvas id="confetti-canvas" class="confetti-canvas"></canvas>
