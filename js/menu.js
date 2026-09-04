@@ -238,6 +238,24 @@ function startLoadTimer() {
   }, STALL_TIMEOUT_MS);
 }
 
+// Shown once the customer comes back out of native AR. Placement cannot be
+// carried across sessions, so the honest framing is "swipe, then place the
+// next one" rather than implying the drink can be changed in place.
+let returnPromptTimer = null;
+function showReturnPrompt() {
+  const hint = document.getElementById("drink-ar-hint");
+  if (!hint || hint.hidden) return;
+  hint.textContent = "Swipe for another drink, then place it again 👉";
+  hint.classList.add("drink-ar-hint--nudge");
+  clearTimeout(returnPromptTimer);
+  // Revert to the normal hint rather than leaving a stale instruction on
+  // screen once they have had time to read it.
+  returnPromptTimer = setTimeout(() => {
+    hint.classList.remove("drink-ar-hint--nudge");
+    syncArMode();
+  }, 6000);
+}
+
 // Reflect the chosen mode in the toggle, the button label and the hint, and
 // disable whichever modes this device cannot actually do.
 function syncArMode() {
@@ -392,6 +410,33 @@ export function initDrinksMenu({ onExitToIntro, onShowDrinkOnCard, trackEvent = 
 
   viewer.addEventListener("load", onModelLoad);
   viewer.addEventListener("error", onModelError);
+
+  // ---------------------------------------------------------------------
+  // RETURNING FROM NATIVE AR
+  // ---------------------------------------------------------------------
+  // A drink cannot be swapped while native AR is running. Quick Look and
+  // Scene Viewer are full-screen OS sessions: the page is backgrounded,
+  // there is no API to change the model, and none to learn or restore where
+  // the customer put it. Every launch starts fresh.
+  //
+  // So the swap happens here instead, and the job is to make the round trip
+  // cheap. `ar-status` tells us when they come back from a session they
+  // actually used, and we meet them with the swipe prompt rather than a
+  // screen that looks the same as before they left.
+  let wasPresenting = false;
+  viewer.addEventListener("ar-status", (e) => {
+    const status = e.detail?.status;
+    if (status === "session-started" || status === "object-placed") {
+      wasPresenting = true;
+      track("ar_status", { status, drink: currentDrink()?.id });
+      return;
+    }
+    if (status === "not-presenting" && wasPresenting) {
+      wasPresenting = false;
+      track("ar_returned", { drink: currentDrink()?.id });
+      showReturnPrompt();
+    }
+  });
 
   // Forward progress means the network and decoder are alive — restart the
   // stall timer so a large model on a slow connection is never cut off.

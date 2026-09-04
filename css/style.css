@@ -605,6 +605,13 @@ body {
   cursor: not-allowed;
 }
 
+/* Emphasised only when the customer returns from an AR session, so the
+   prompt to try another drink is noticeable without being permanent. */
+.drink-ar-hint--nudge {
+  color: var(--color-accent-2);
+  font-weight: 600;
+}
+
 /* One line of guidance under the native-AR button. Placement is a step the
    OS owns, so the only way to steer it is to say so before the handoff. */
 .drink-ar-hint {
