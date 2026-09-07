@@ -125,10 +125,31 @@ export function modelPathFor(drink) {
   return `${DRINK_MODEL_DIR}/${drink.id}.glb`;
 }
 
-// Optional per-drink USDZ override for iOS Quick Look. model-viewer will
-// generate a USDZ on the fly when this is absent, which is fine for static
-// models — supply a hand-authored one only if a drink has an animation or a
-// material that survives the auto-conversion badly.
+// ---------------------------------------------------------------------------
+// iOS QUICK LOOK — which drinks ship a pre-built USDZ
+// ---------------------------------------------------------------------------
+// With no `ios-src`, model-viewer converts the GLB to USDZ ON THE DEVICE at
+// every AR launch. That is free in bandwidth — the phone only ever downloads
+// the ~1 MB GLB — but the conversion is where PBR materials most often
+// degrade, and it is redone on every tap.
+//
+// A pre-built USDZ (npm run drink) is deterministic and verified at build
+// time, but it is a SEPARATE, MUCH LARGER download, because USDZ stores
+// geometry uncompressed and undoes Draco entirely:
+//
+//   negroni   1070 KB glb   ->   5107 KB usdz   (built from the 46 k-tri variant)
+//                                15321 KB usdz  (built from the full model)
+//
+// So this is opt-in per drink rather than automatic: list a drink here only
+// once its USDZ has been eyeballed in Quick Look and judged worth the bytes.
+// Anything absent falls back to on-device conversion, which is what shipped
+// before and works fine.
+const USDZ_DRINKS = new Set([
+  // "old-fashioned",
+  // "negroni",
+]);
+
 export function iosModelPathFor(drink) {
-  return drink.iosModel || null;
+  if (drink.iosModel) return drink.iosModel;
+  return USDZ_DRINKS.has(drink.id) ? `${DRINK_MODEL_DIR}/${drink.id}.usdz` : null;
 }

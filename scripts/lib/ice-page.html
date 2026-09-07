@@ -1,0 +1,92 @@
+<!doctype html><meta charset="utf-8"><title>ice</title>
+<!-- Driven by scripts/add-ice.mjs in headless Chrome. Geometry generation and
+     GLTF export both need three.js, and the exporter needs a DOM for its
+     texture handling — same reason the USDZ step runs in a browser. -->
+<script type="importmap">
+{"imports":{"three":"/js/vendor/three/three.module.min.js","three/addons/":"/js/vendor/three/"}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from '/js/vendor/three/loaders/GLTFLoader.js';
+import { DRACOLoader } from '/js/vendor/three/loaders/DRACOLoader.js';
+import { GLTFExporter } from '/js/vendor/three/exporters/GLTFExporter.js';
+
+const q = new URLSearchParams(location.search);
+const src = q.get('src');
+const RADIUS_FRAC = Number(q.get('radius') ?? 0.42);  // of glass width
+const CENTRE_FRAC = Number(q.get('centre') ?? 0.56);  // of glass height
+const ROUGH = Number(q.get('rough') ?? 0.22);
+
+try {
+  const dl = new DRACOLoader(); dl.setDecoderPath('/js/vendor/draco/');
+  const loader = new GLTFLoader(); loader.setDRACOLoader(dl);
+  const gltf = await loader.loadAsync(src);
+  const scene = gltf.scene;
+  scene.updateMatrixWorld(true);
+
+  const box = new THREE.Box3().setFromObject(scene);
+  const size = box.getSize(new THREE.Vector3());
+  const centre = box.getCenter(new THREE.Vector3());
+
+  // A real Old Fashioned ice sphere is a big single cube/ball that sits
+  // mostly submerged with a cap above the liquid.
+  const radius = size.x * RADIUS_FRAC;
+  const y = box.min.y + size.y * CENTRE_FRAC;
+
+  // Icosahedron rather than a UV sphere: even triangles, no pole pinching,
+  // and detail 3 is enough to read as round at 9 cm while staying light.
+  const geo = new THREE.IcosahedronGeometry(radius, 3);
+
+  // Nudge vertices outward/inward slightly so it reads as hand-cut ice
+  // rather than a billiard ball. Deterministic, so rebuilds are identical.
+  const pos = geo.attributes.position;
+  let seed = 20260907;
+  const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+  const v = new THREE.Vector3();
+  for (let i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i);
+    const n = 1 + (rnd() - 0.5) * 0.06;
+    v.multiplyScalar(n);
+    pos.setXYZ(i, v.x, v.y, v.z);
+  }
+  geo.computeVertexNormals();
+
+  // Frosted rather than optically clear. Real transmission is where PBR most
+  // often breaks in USDZ conversion, and the whole project has been bitten by
+  // transparent-glass handling — a slightly translucent frosted look survives
+  // every renderer and still reads unmistakably as ice.
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0xeaf4ff,
+    roughness: ROUGH,
+    metalness: 0.0,
+    transparent: true,
+    opacity: 0.82,
+    flatShading: true,     // facets catch the light like cut ice
+    side: THREE.FrontSide,
+  });
+  mat.name = 'ice';
+
+  const ice = new THREE.Mesh(geo, mat);
+  ice.name = 'ice-sphere';
+  ice.position.set(centre.x, y, centre.z);
+  scene.add(ice);
+
+  const exporter = new GLTFExporter();
+  const glb = await exporter.parseAsync(scene, { binary: true });
+
+  let bin = '';
+  const bytes = new Uint8Array(glb);
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  }
+  const after = new THREE.Box3().setFromObject(scene);
+  window.__ice = {
+    ok: true, base64: btoa(bin), bytes: bytes.length,
+    glass: { w: size.x, h: size.y },
+    ice: { radius, y },
+    bounds: { minY: after.min.y, h: after.getSize(new THREE.Vector3()).y },
+  };
+} catch (err) {
+  window.__ice = { ok: false, error: String(err && err.message || err) };
+}
+</script>

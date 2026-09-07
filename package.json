@@ -13,7 +13,11 @@
     "compress:glb": "npx --yes @gltf-transform/cli draco",
     "compress:textures": "npx --yes @gltf-transform/cli webp",
     "validate:glb": "npx --yes @gltf-transform/cli validate",
-    "flight": "node scripts/build-flight.mjs"
+    "flight": "node scripts/build-flight.mjs",
+    "jitter": "node scripts/measure-jitter.mjs",
+    "record-ar": "node scripts/record-ar.mjs",
+    "turntable": "node scripts/turntable.mjs",
+    "ice": "node scripts/add-ice.mjs"
   },
   "devDependencies": {
     "canvas": "3.2.3",

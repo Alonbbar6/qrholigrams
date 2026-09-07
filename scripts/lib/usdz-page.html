@@ -1,0 +1,79 @@
+<!doctype html><meta charset="utf-8"><title>usdz</title>
+<!-- Loaded only by scripts/lib/usdz.mjs in headless Chrome. THREE.USDZExporter
+     needs document.createElement, OffscreenCanvas and canvas.toBlob to turn
+     textures into image files, so it cannot run in plain Node — a real browser
+     is the shortest honest path. -->
+<script type="importmap">
+{"imports":{"three":"/js/vendor/three/three.module.min.js","three/addons/":"/js/vendor/three/"}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from '/js/vendor/three/loaders/GLTFLoader.js';
+import { DRACOLoader } from '/js/vendor/three/loaders/DRACOLoader.js';
+import { USDZExporter } from '/js/vendor/three/exporters/USDZExporter.js';
+
+const src = new URLSearchParams(location.search).get('src');
+
+function report(scene) {
+  // Material facts worth checking survive the conversion, since USDZ supports
+  // a narrower PBR set than glTF.
+  const mats = [];
+  scene.traverse((o) => {
+    if (!o.isMesh) return;
+    for (const m of (Array.isArray(o.material) ? o.material : [o.material])) {
+      if (!m) continue;
+      mats.push({
+        name: m.name || '(unnamed)',
+        type: m.type,
+        maps: ['map','normalMap','roughnessMap','metalnessMap','emissiveMap','aoMap']
+              .filter((k) => m[k]),
+        metalness: m.metalness, roughness: m.roughness,
+        transparent: m.transparent, opacity: m.opacity,
+        doubleSided: m.side === THREE.DoubleSide,
+      });
+    }
+  });
+  return mats;
+}
+
+try {
+  const dl = new DRACOLoader();
+  dl.setDecoderPath('/js/vendor/draco/');
+  const loader = new GLTFLoader();
+  loader.setDRACOLoader(dl);
+
+  // GLTFLoader + DRACOLoader decode compressed geometry on load, so the scene
+  // handed to the exporter already holds plain BufferGeometry. Exporting a
+  // still-compressed scene would silently produce an empty USDZ.
+  const gltf = await loader.loadAsync(src);
+  const scene = gltf.scene;
+
+  scene.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(scene);
+  const size = box.getSize(new THREE.Vector3());
+
+  let draco = false;
+  scene.traverse((o) => { if (o.isMesh && o.geometry?.attributes?.position) draco = draco || false; });
+
+  const exporter = new USDZExporter();
+  const arraybuffer = await exporter.parse(scene);
+
+  // Hand the bytes back as base64 — CDP returns JSON, not binary.
+  let bin = '';
+  const bytes = new Uint8Array(arraybuffer);
+  const CHUNK = 0x8000;
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+  }
+
+  window.__usdz = {
+    ok: true,
+    base64: btoa(bin),
+    bytes: bytes.length,
+    materials: report(scene),
+    size: { x: size.x, y: size.y, z: size.z, minY: box.min.y },
+  };
+} catch (err) {
+  window.__usdz = { ok: false, error: String(err && err.message || err) };
+}
+</script>

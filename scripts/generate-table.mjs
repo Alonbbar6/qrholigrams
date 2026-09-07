@@ -299,11 +299,11 @@ async function buildCardImage() {
   ctx.fillStyle = COLORS.text;
   ctx.textAlign = "center";
   ctx.font = "bold 46px Helvetica";
-  ctx.fillText("Scan for your gift", CARD_W / 2, capY + 68);
+  ctx.fillText("Scan for our cocktail menu", CARD_W / 2, capY + 68);
 
   ctx.fillStyle = "rgba(255,255,255,0.75)";
   ctx.font = "26px Helvetica";
-  ctx.fillText("Point your camera here once the page loads", CARD_W / 2, capY + 122);
+  ctx.fillText("See our drinks on your table in 3D", CARD_W / 2, capY + 122);
 
   // Footer strip keeps the URL legible against the confetti.
   ctx.save();

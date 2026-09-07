@@ -18,6 +18,7 @@
 //                   at 100k+ triangles and 4K PNGs; that's a slow download on
 //                   bar wifi and a slow first frame on a mid-range phone.
 //   3. scale      — to a real-world height in metres (see below).
+//   4. usdz       — a Quick Look companion beside the .glb (--no-usdz to skip)
 //
 // ORDER MATTERS: centering must come BEFORE compression. `center` cannot
 // operate on Draco-compressed geometry without decoding it first, and it does
@@ -45,8 +46,9 @@
 // ============================================================================
 
 import { execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync, mkdirSync, statSync, rmSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, statSync, rmSync, existsSync } from "node:fs";
 import path from "node:path";
+import { exportUSDZ, findChrome } from "./lib/usdz.mjs";
 
 // Real-world heights in metres. Defaults to a rocks glass — override with
 // --height for anything else.
@@ -100,6 +102,33 @@ const AR_RATIO = 0.015;
 const AR_TEXTURE_SIZE = 512;
 
 // ---------------------------------------------------------------------------
+// USDZ BUDGET — its own decimation level, not a reused variant
+// ---------------------------------------------------------------------------
+// USDZ stores geometry UNCOMPRESSED, so Draco's saving is undone completely on
+// export and triangle count becomes the entire cost. Measured on the Negroni:
+//
+//   153 k tris (full)     ->  15321 KB usdz
+//    46 k tris (ar/)      ->   5107 KB usdz
+//
+// Neither is right: the full model is absurd, and the ar/ build was sized for
+// MindAR's frame budget, not for a file whose cost is linear in vertices.
+// Quick Look renders this at 9 cm on a table, where a low-teens triangle count
+// is indistinguishable — so USDZ gets its own level.
+//
+// The knob that matters is ERROR, not ratio. simplify-error is a budget, and
+// meshopt spends all of it: at the pipeline's usual 0.01 the ratio is never
+// reached, and old-fashioned collapsed to 1,956 triangles no matter what
+// ratio was asked for. Measured at ratio 0.10:
+//
+//   error 0.0005 -> 58,944 tris     error 0.002 -> 12,594 tris
+//   error 0.001  -> 30,200 tris     error 0.004 ->  9,938 tris
+//
+// 0.002 lands in the low teens, which is the target.
+const USDZ_RATIO = 0.10;
+const USDZ_ERROR = 0.002;
+const USDZ_TEXTURE_SIZE = 512;
+
+// ---------------------------------------------------------------------------
 // ARGS
 // ---------------------------------------------------------------------------
 const argv = process.argv.slice(2);
@@ -132,6 +161,7 @@ Usage: node scripts/prep-drink.mjs <input.glb> <drink-id> [options]
   --ratio <0-1>        fraction of vertices to keep       (default ${DEFAULT_RATIO})
   --error <number>     simplification error tolerance     (default ${DEFAULT_ERROR})
   --texture-size <px>  max texture dimension              (default ${DEFAULT_TEXTURE_SIZE})
+  --no-usdz            skip the Quick Look USDZ companion
 
 Examples:
   node scripts/prep-drink.mjs ~/Downloads/negroni.glb negroni
@@ -372,6 +402,56 @@ try {
   }
 
   console.log(`\n✓ ${path.relative(process.cwd(), outPath)}   ${beforeKb} KB → ${kb(outPath)} KB`);
+
+  // ---- 4. USDZ companion for iOS Quick Look ------------------------------
+  // model-viewer will synthesise a USDZ from the GLB when ios-src is absent,
+  // but that conversion happens on the phone every launch and is where PBR
+  // materials most often degrade. Shipping one built here means iPhones get a
+  // deterministic file that was checked at build time.
+  //
+  // Skipped for the light AR variants: those exist for MindAR and WebXR, which
+  // read the GLB directly and never touch Quick Look.
+  if (!("no-usdz" in flags) && !isArVariant) {
+    const usdzPath = outPath.replace(/\.glb$/, ".usdz");
+    if (!findChrome()) {
+      console.warn(`  ! Chrome not found — skipping USDZ. model-viewer will convert on device instead.`);
+    } else {
+      console.log(`\n[4/4] usdz — Quick Look companion`);
+      try {
+        // A dedicated decimation for USDZ. Runs on the finished model, so the
+        // scale node is flattened into vertex positions and real-world size
+        // survives — confirmed by the dimensions printed below.
+        const tmpU = path.join(outDir, `.tmp-${drinkId}-usdz.glb`);
+        gltf(
+          "optimize", outPath, tmpU,
+          "--compress", "draco",
+          "--texture-compress", "webp",
+          "--texture-size", String(USDZ_TEXTURE_SIZE),
+          "--simplify", "true",
+          "--simplify-ratio", String(USDZ_RATIO),
+          "--simplify-error", String(USDZ_ERROR)
+        );
+        const res = await exportUSDZ({
+          root: process.cwd(),
+          glbPath: path.relative(process.cwd(), tmpU),
+        });
+        rmSync(tmpU, { force: true });
+        writeFileSync(usdzPath, res.buffer);
+        console.log(`  scale preserved : ${res.size.x.toFixed(3)} x ${res.size.y.toFixed(3)} x ${res.size.z.toFixed(3)} m`);
+        console.log(`  base pivot      : y=${res.size.minY.toFixed(4)}`);
+        for (const m of res.materials) {
+          console.log(`  material        : ${m.type}  maps=[${m.maps.join(", ") || "none"}]  ` +
+                      `metal=${m.metalness ?? "-"} rough=${m.roughness ?? "-"} doubleSided=${m.doubleSided}`);
+        }
+        console.log(`\n✓ ${path.relative(process.cwd(), usdzPath)}   ${kb(usdzPath)} KB`);
+      } catch (err) {
+        // A missing USDZ is not fatal: model-viewer falls back to converting
+        // on device, which is what shipped before this step existed.
+        console.warn(`  ! USDZ export failed (${err.message}) — model-viewer will convert on device.`);
+      }
+    }
+  }
+
   console.log(`  Menu id "${drinkId}" — confirm it matches an entry in js/drinks.js.\n`);
 } catch (err) {
   console.error(`\n✗ ${err.message}\n`);

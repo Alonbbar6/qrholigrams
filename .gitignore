@@ -14,3 +14,7 @@ source/
 # stray `git add -A` cannot repeat that.
 Meshy_AI_*.glb
 Tripo_*.glb
+
+# Screen recordings and print exports — working files, not deliverables.
+RecordIt-*.mov
+*.png.pdf
